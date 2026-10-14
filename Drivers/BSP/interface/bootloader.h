@@ -64,30 +64,34 @@ void bootloader_finish_write(void);
 
 uint8_t OTA_Flag_Save(void);
 
-/* ===== OTA framing protocol (per-packet CRC32 + stop-and-wait ACK) ===== */
-#define FRAME_SYNC        0xA5
-#define FRAME_PAYLOAD_MAX 512
-#define FRAME_HDR_LEN     5
-#define FRAME_MAX_LEN     (FRAME_HDR_LEN + FRAME_PAYLOAD_MAX + 4)
-#define CMD_LEN           20
+/* ============ OTA 分包协议(逐包 CRC32 校验 + 停等重传)============
+ * 数据帧: A5 | seq(2,小端) | len(2,小端) | data | crc32(4,小端)
+ * 命令帧: 20 字节,见 bootloader.c 里的解析处
+ * ================================================================ */
+#define FRAME_SYNC        0xA5      /* 数据帧同步头 */
+#define FRAME_PAYLOAD_MAX 512       /* 单包最大数据长度 */
+#define FRAME_HDR_LEN     5         /* 帧头长度:SYNC(1)+seq(2)+len(2) */
+#define FRAME_MAX_LEN     (FRAME_HDR_LEN + FRAME_PAYLOAD_MAX + 4)  /* 最大帧长 521 */
+#define CMD_LEN           20        /* 命令帧长度 */
 
-#define CTRL_READY 0x11
-#define CTRL_ACK   0x06
-#define CTRL_NAK   0x15
-#define CTRL_DONE  0x12
-#define CTRL_OK    0x13
-#define CTRL_FAIL  0x14
+/* 设备 -> PC 的单字节控制回复 */
+#define CTRL_READY 0x11     /* 擦除完成,可以开始发固件 */
+#define CTRL_ACK   0x06     /* 本包接收成功 */
+#define CTRL_NAK   0x15     /* 本包校验失败,请重发 */
+#define CTRL_DONE  0x12     /* 所有包已收齐 */
+#define CTRL_OK    0x13     /* 最终全片校验通过 */
+#define CTRL_FAIL  0x14     /* 出错(命令被拒 / 写入越界 / 最终校验失败) */
 
-uint32_t crc32_iso(const uint8_t *p, uint32_t len);
-void     frame_parser_feed(const uint8_t *buf, uint16_t len);
-void     frame_reset(void);
-void     send_ctrl(uint8_t b);
+uint32_t crc32_iso(const uint8_t *p, uint32_t len);         /* 标准 CRC32 */
+void     frame_parser_feed(const uint8_t *buf, uint16_t len);/* 流式帧解析 */
+void     frame_reset(void);                                 /* 清空解析状态 */
+void     send_ctrl(uint8_t b);                              /* 发一个控制字节 */
 
-extern uint16_t g_total_packets;
-extern uint16_t g_payload_len;
-extern uint8_t  g_all_packets_done;
+extern uint16_t g_total_packets;    /* 总包数 */
+extern uint16_t g_payload_len;      /* 每包长度 */
+extern uint8_t  g_all_packets_done; /* 收齐标志 */
 
-uint8_t flash_crc_check(uint32_t start_addr, uint32_t total_len, uint32_t target_crc);
+uint8_t flash_crc_check(uint32_t start_addr, uint32_t total_len, uint32_t target_crc); /* 最终整片 CRC32 校验 */
 
 void Flash_Read(uint32_t src_addr, volatile void *dst, uint32_t len);
 

@@ -2,7 +2,7 @@
 #define __USART_H__
 
 #include "sys.h"
-#define UART1_RX_BUF_SIZE 521   /* = FRAME_MAX_LEN, one whole OTA frame fits exactly */
+#define UART1_RX_BUF_SIZE 521   /* = 一个最大帧长(5+512+4),一帧刚好塞满一个 DMA 缓冲 */
 #define UART1_TX_BUF_SIZE 256
 
 extern UART_HandleTypeDef uart1_handle;

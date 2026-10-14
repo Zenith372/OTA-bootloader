@@ -55,8 +55,9 @@ int main(void)
         temp_flag.boot_cnt = 0;
         OTA_Flag_Save(); // 写回Flash，清除异常DOWNLOADING标记
     }
+    /* ---- 等待升级命令的入口:跳转失败时会回到这里 ---- */
     wait_cmd:
-    cmd_idx = 0;
+    cmd_idx = 0;                                 /* 命令帧接收索引清零 */
     printf("当前活跃APP区为:%s\r\n",ACTIVE_SLOT);
     printf("等待接收命令，判断当前状态中...\r\n");
     HAL_UART_Receive_IT(&uart1_handle, &ch_recv, 1);// 启动单字节中断接收【接收指令】
@@ -90,7 +91,8 @@ int main(void)
             printf("直接跳转新APP...\r\n");
             bootloader_jump_to_app(GetSlotUpdateAddr(temp_flag.active_slot),GetSlotUpdateEndAddr(temp_flag.active_slot));//跳转APP
         }
-        /* jump failed: the new slot looks invalid -> clear VERIFY state and wait for OTA */
+        /* 走到这里说明"跳转新 APP"返回了 = 新槽无效:
+         * 清掉待验证状态、清零启动计数,回到等待窗口(靠下面的 goto) */
         temp_flag.state = OTA_IDLE;
         temp_flag.boot_cnt = 0;
         OTA_Flag_Save();
@@ -106,7 +108,7 @@ int main(void)
         flash_write_offset = 0;
         last_byte_flag = 0;
         receive_all_len = 0;
-        frame_reset();
+        frame_reset();              /* 复位帧解析状态,重新期待第 1 包 */
         if(!Flash_erase())//flash的非当前活跃APP区全擦
         {
             printf("擦除失败,中止本次升级\r\n");
@@ -120,33 +122,37 @@ int main(void)
         // 打开IDLE中断前，先清除一次残留的IDLE标志
         __HAL_UART_CLEAR_IDLEFLAG(&uart1_handle);
         __HAL_UART_ENABLE_IT(&uart1_handle, UART_IT_IDLE);
-        send_ctrl(CTRL_READY);   /* flash erased, ready for packets */
+        send_ctrl(CTRL_READY);      /* 告诉上位机:擦除完成,可以发固件了 */
         printf("启动DMA接收, ret=%d\r\n", dma_ret);  // 新增：0=启动成功
     }
     else//空闲状态OTA_IDLE || OTA_RUN_FAIL
     {
+        /* 优先启动当前活动槽 */
         if(temp_flag.active_slot == SLOT_A) bootloader_jump_to_app(APP_A_START_ADDR,APP_A_END_ADDR);
         else                                bootloader_jump_to_app(APP_B_START_ADDR,APP_B_END_ADDR);
-        /* active slot invalid -> try the backup slot */
+        /* 活动槽无效 -> 再试备份槽 */
         printf("active slot invalid, try backup slot\r\n");
         if(temp_flag.active_slot == SLOT_A) bootloader_jump_to_app(APP_B_START_ADDR,APP_B_END_ADDR);
         else                                bootloader_jump_to_app(APP_A_START_ADDR,APP_A_END_ADDR);
-        /* both slots invalid -> stay in OTA mode and wait for a command */
+        /* 两个槽都无效 -> 停在 OTA 模式,回到等待窗口继续等升级命令 */
         printf("both slots invalid, stay in OTA mode\r\n");
         goto wait_cmd;
         
     }
+    /* ===================== 固件接收主循环 =====================
+     * 只做两件事:①把收到的一段数据喂给帧解析器
+     *            ②所有包收齐后做最终整片校验 */
     while(1)
     {
-        if(buf0_ready == 1)
+        if(buf0_ready == 1)                     /* DMA 缓冲0 有数据了 */
         {
             __disable_irq();
             uint16_t len = buf0_len;
-            buf0_ready = 0;
+            buf0_ready = 0;                     /* 先清标志,防止重复处理 */
             __enable_irq();
-            frame_parser_feed(rx_buf0, len);
+            frame_parser_feed(rx_buf0, len);    /* 交给帧解析器:逐包校验 + 写 Flash + 回 ACK */
         }
-        else if(buf1_ready == 1)
+        else if(buf1_ready == 1)                /* DMA 缓冲1 有数据了 */
         {
             __disable_irq();
             uint16_t len = buf1_len;
@@ -154,27 +160,28 @@ int main(void)
             __enable_irq();
             frame_parser_feed(rx_buf1, len);
         }
-        else if(g_all_packets_done)
+        else if(g_all_packets_done)             /* 所有包已收完 -> 最终校验 */
         {
-            bootloader_finish_write();
-            if(flash_crc_check(GetSlotUpdateAddr(temp_flag.active_slot), temp_flag.app_len, temp_flag.new_app_crc))
+            bootloader_finish_write();          /* 补写最后遗留的半个字节 */
+            if(flash_crc_check(GetSlotUpdateAddr(temp_flag.active_slot),
+                               temp_flag.app_len, temp_flag.new_app_crc))
             {
-                send_ctrl(CTRL_OK);
+                send_ctrl(CTRL_OK);             /* 告诉上位机:升级成功 */
                 printf("OTA ok, CRC32 pass, jump to new APP\r\n");
-                temp_flag.state = OTA_VERIFY_OK;
+                temp_flag.state = OTA_VERIFY_OK;/* 标记"待验证",下次上电启动新固件 */
                 OTA_Flag_Save();
                 IWDG_Boot_Feed();
                 __disable_irq();
-                NVIC_SystemReset();
+                NVIC_SystemReset();             /* 复位,准备运行新固件 */
             }
             else
             {
-                send_ctrl(CTRL_FAIL);
+                send_ctrl(CTRL_FAIL);           /* 告诉上位机:升级失败 */
                 printf("OTA fail, CRC32 mismatch\r\n");
-                g_all_packets_done = 0;
+                g_all_packets_done = 0;         /* 清标志,等待重新升级 */
             }
         }
-        IWDG_Boot_Feed();
+        IWDG_Boot_Feed();                       /* 主循环喂狗 */
     }
 
 }

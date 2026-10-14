@@ -29,87 +29,107 @@ volatile uint8_t  g_is_full_packet = 0;//当前包是否是满包
 volatile OTA_FlagTypeDef temp_flag;
 typedef void (*pFunc)(void);
 
-/* ===== OTA frame parser (per-packet CRC32 + stop-and-wait ACK) ===== */
-static uint8_t  frame_buf[FRAME_MAX_LEN];
-static uint16_t frame_idx  = 0;
-static uint16_t frame_need = 0;
-static uint16_t g_expect_seq = 1;
-uint16_t g_total_packets = 0;
-uint16_t g_payload_len   = 0;
-uint8_t  g_all_packets_done = 0;
-static uint8_t g_flash_overflow = 0;
+/* ===================== 固件分包接收:帧解析状态 =====================
+ * 数据帧格式: A5 | seq(2,小端) | len(2,小端) | data | crc32(4,小端)
+ * =================================================================== */
+static uint8_t  frame_buf[FRAME_MAX_LEN];   /* 组帧缓冲:拼满一整帧后才做校验 */
+static uint16_t frame_idx  = 0;             /* 已放入 frame_buf 的字节数(游标) */
+static uint16_t frame_need = 0;             /* 本帧总长度;0 表示还没读到 len 字段 */
+static uint16_t g_expect_seq = 1;           /* 期望收到的下一个包号(从 1 开始) */
+uint16_t g_total_packets = 0;               /* 总包数(由命令帧给出) */
+uint16_t g_payload_len   = 0;               /* 每包数据长度(由命令帧给出,=512) */
+uint8_t  g_all_packets_done = 0;            /* 全部收齐标志,置 1 后触发最终校验 */
+static uint8_t g_flash_overflow = 0;        /* Flash 越界写保护触发标志 */
 
+/* 每次开始下载前清场:只清"收包进度",不动命令帧给的参数 */
 void frame_reset(void)
 {
-    frame_idx          = 0;
-    frame_need         = 0;
-    g_expect_seq       = 1;
-    g_all_packets_done = 0;
-    g_flash_overflow   = 0;
+    frame_idx          = 0;     /* 组帧游标归零 */
+    frame_need         = 0;     /* 还不知道本帧多长 */
+    g_expect_seq       = 1;     /* 从第 1 包重新叫号 */
+    g_all_packets_done = 0;     /* 收齐标志清零 */
+    g_flash_overflow   = 0;     /* 清越界标志 */
 }
 
+/* 发送 1 个控制字节(ACK/NAK/READY/DONE/OK/FAIL)
+ * 阻塞式:等上一个字节发完(TC 标志)再写数据寄存器 */
 void send_ctrl(uint8_t b)
 {
-    while ((USART1->SR & 0x40) == 0);
-    USART1->DR = b;
+    while ((USART1->SR & 0x40) == 0);   /* 0x40 = TC(发送完成)标志 */
+    USART1->DR = b;                     /* 写入 DR,硬件自动发出 */
 }
 
+/* 一整帧到齐后调用:拆字段 -> 校验包号和 CRC32 -> 决定写 Flash 还是让上位机重发 */
 static void frame_on_complete(void)
 {
-    uint16_t plen = (uint16_t)frame_buf[3] | ((uint16_t)frame_buf[4] << 8);
-    uint16_t seq  = (uint16_t)frame_buf[1] | ((uint16_t)frame_buf[2] << 8);
-    uint16_t idx  = FRAME_HDR_LEN + plen;
+    /* ---- 1. 从帧里取出各字段(seq/len 都是小端) ---- */
+    uint16_t plen = (uint16_t)frame_buf[3] | ((uint16_t)frame_buf[4] << 8);  /* 本包数据长度 */
+    uint16_t seq  = (uint16_t)frame_buf[1] | ((uint16_t)frame_buf[2] << 8);  /* 本包包号 */
+    uint16_t idx  = FRAME_HDR_LEN + plen;   /* 数据之后、CRC 之前的偏移 = 5 + plen */
+
+    /* ---- 2. 取出帧里带来的 CRC32(小端 4 字节) ---- */
     uint32_t rcrc = (uint32_t)frame_buf[idx]
                   | ((uint32_t)frame_buf[idx + 1] << 8)
                   | ((uint32_t)frame_buf[idx + 2] << 16)
                   | ((uint32_t)frame_buf[idx + 3] << 24);
+    /* ---- 3. 自己对 [帧头 + 数据] 算一遍 CRC32 ---- */
     uint32_t ccrc = crc32_iso(frame_buf, idx);
 
-    /* duplicate of last written packet (ACK lost): re-ACK only, never rewrite */
+    /* ---- 4. 情况一:这是上一包的重传(ACK 在路上丢了) ----
+     * 只补一个 ACK,绝不重复写 Flash;否则偏移错位会让整份固件报废 */
     if (seq == (uint16_t)(g_expect_seq - 1))
     {
         send_ctrl(CTRL_ACK);
         return;
     }
-    /* wrong seq or CRC -> NAK, sender resends */
+    /* ---- 5. 情况二:包号不对 或 CRC 不对 -> 回 NAK,让上位机重发本包 ---- */
     if (seq != g_expect_seq || ccrc != rcrc)
     {
         printf("pkt %u bad seq=%u crc=%08X/%08X\r\n", g_expect_seq, seq, ccrc, rcrc);
         send_ctrl(CTRL_NAK);
         return;
     }
-    /* good packet -> write payload to flash */
+    /* ---- 6. 情况三:校验通过 -> 把 payload 写入 Flash ---- */
     Flash_write(&frame_buf[FRAME_HDR_LEN], plen);
-    if(g_flash_overflow)                 /* out-of-range write was blocked */
+    if(g_flash_overflow)                 /* 越界保护被触发:一个字都没写 */
     {
-        send_ctrl(CTRL_FAIL);
+        send_ctrl(CTRL_FAIL);            /* 通知上位机出错,不再 ACK */
         return;
     }
-    receive_all_len += plen;
-    g_expect_seq++;
+    receive_all_len += plen;             /* 累计已写入字节数(统计用) */
+    g_expect_seq++;                      /* 叫号机 +1 */
 
+    /* ---- 7. 最后一包收完了吗?收完则置标志并通知上位机 ---- */
     if (g_expect_seq > g_total_packets)
     {
         g_all_packets_done = 1;
         send_ctrl(CTRL_DONE);
     }
-    send_ctrl(CTRL_ACK);
+    send_ctrl(CTRL_ACK);                 /* 本包成功 */
 }
 
+/* 流式帧解析:把"没有边界的字节流"切成"一帧一帧"
+ * 逐字节处理,可跨多次 DMA 搬运,靠 frame_idx / frame_need 续接 */
 void frame_parser_feed(const uint8_t *buf, uint16_t len)
 {
     for (uint16_t i = 0; i < len; i++)
     {
         uint8_t b = buf[i];
-        if (frame_idx == 0 && b != FRAME_SYNC) continue;
-        frame_buf[frame_idx++] = b;
 
+        /* 还没开始组帧时,必须遇到帧头 A5 才动手;其它字节直接丢弃(重同步) */
+        if (frame_idx == 0 && b != FRAME_SYNC) continue;
+
+        frame_buf[frame_idx++] = b;      /* 放入缓冲,游标 +1 */
+
+        /* 刚好收满 5 字节帧头 -> 此时能读出 len,算出整帧要多长 */
         if (frame_idx == FRAME_HDR_LEN)
         {
             uint16_t plen = (uint16_t)frame_buf[3] | ((uint16_t)frame_buf[4] << 8);
-            if (plen == 0 || plen > FRAME_PAYLOAD_MAX) { frame_idx = 0; continue; }
-            frame_need = FRAME_HDR_LEN + plen + 4;
+            if (plen == 0 || plen > FRAME_PAYLOAD_MAX) { frame_idx = 0; continue; } /* 长度非法,重新找帧头 */
+            frame_need = FRAME_HDR_LEN + plen + 4;   /* 整帧长 = 帧头5 + 数据 + CRC4 */
         }
+
+        /* 够一整帧了 -> 交出去校验,然后清空准备下一帧 */
         if (frame_need != 0 && frame_idx >= frame_need)
         {
             frame_on_complete();
@@ -262,7 +282,7 @@ void Flash_write(uint8_t *buf, uint16_t len)//写入flash
     uint16_t data16;
     uint32_t slot_size = GetSlotUpdateEndAddr(temp_flag.active_slot)
                        - GetSlotUpdateAddr(temp_flag.active_slot);
-    if(flash_write_offset + (uint32_t)len > slot_size)   /* never write past the slot */
+    if(flash_write_offset + (uint32_t)len > slot_size)   /* 越界保护:绝不写到本分区之外 */
     {
         g_flash_overflow = 1;
         printf("Flash overflow off=%u len=%u size=%u\r\n",
@@ -410,6 +430,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
                                     (cmd_buf[6]);
                     g_total_packets = ((uint16_t)cmd_buf[7] << 8) | cmd_buf[8];
                     g_payload_len   = ((uint16_t)cmd_buf[9] << 8) | cmd_buf[10];
+                    /* ---- 分区边界校验:固件必须能放进目标分区,否则拒绝升级 ---- */
                     {
                         uint32_t slot_size = GetSlotUpdateEndAddr(temp_flag.active_slot)
                                            - GetSlotUpdateAddr(temp_flag.active_slot);
@@ -417,11 +438,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
                         {
                             printf("app_len %u > slot %u, reject\r\n",
                                    (unsigned)temp_flag.app_len, (unsigned)slot_size);
-                            send_ctrl(CTRL_FAIL);
+                            send_ctrl(CTRL_FAIL);        /* 通知上位机:拒绝,不进入下载 */
                         }
                         else
                         {
-                            temp_flag.state = OTA_DOWNLOADING;
+                            temp_flag.state = OTA_DOWNLOADING;   /* 通过才进入下载状态 */
                         }
                     }
                     printf("app_len=%08X\r\n", temp_flag.app_len);
@@ -486,8 +507,8 @@ uint8_t OTA_Flag_Save(void)//OTA_Flag_Save：把 RAM temp_flag 保存到 Flash（只有 
     return 1;
 }
 
-// CRC32 (IEEE 802.3 / zlib), identical to PC-side zlib.crc32
-// self-test: crc32_iso((const uint8_t*)"123456789", 9) == 0xCBF43926
+/* CRC32(标准 IEEE 802.3 / zlib),与 PC 端 zlib.crc32 结果完全一致
+ * 自检:crc32_iso((const uint8_t*)"123456789", 9) == 0xCBF43926 */
 uint32_t crc32_iso(const uint8_t *p, uint32_t len)
 {
     uint32_t crc = 0xFFFFFFFFu;
@@ -505,7 +526,8 @@ uint32_t crc32_iso(const uint8_t *p, uint32_t len)
     return crc ^ 0xFFFFFFFFu;
 }
 
-// verify CRC32 over the whole APP flash region (returns 1=pass, 0=fail)
+/* 最终整片校验:把写进 Flash 的整个 APP 区读回来重算 CRC32,和上位机给的目标值比
+ * 返回:1 = 通过,0 = 失败 */
 uint8_t flash_crc_check(uint32_t start_addr, uint32_t total_len, uint32_t target_crc)
 {
     uint32_t calc_crc = crc32_iso((const uint8_t *)start_addr, total_len);
