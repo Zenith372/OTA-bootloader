@@ -37,6 +37,7 @@ static uint16_t g_expect_seq = 1;
 uint16_t g_total_packets = 0;
 uint16_t g_payload_len   = 0;
 uint8_t  g_all_packets_done = 0;
+static uint8_t g_flash_overflow = 0;
 
 void frame_reset(void)
 {
@@ -44,6 +45,7 @@ void frame_reset(void)
     frame_need         = 0;
     g_expect_seq       = 1;
     g_all_packets_done = 0;
+    g_flash_overflow   = 0;
 }
 
 void send_ctrl(uint8_t b)
@@ -78,6 +80,11 @@ static void frame_on_complete(void)
     }
     /* good packet -> write payload to flash */
     Flash_write(&frame_buf[FRAME_HDR_LEN], plen);
+    if(g_flash_overflow)                 /* out-of-range write was blocked */
+    {
+        send_ctrl(CTRL_FAIL);
+        return;
+    }
     receive_all_len += plen;
     g_expect_seq++;
 
@@ -253,6 +260,15 @@ void Flash_write(uint8_t *buf, uint16_t len)//写入flash
     HAL_StatusTypeDef ret;
     uint16_t i = 0;
     uint16_t data16;
+    uint32_t slot_size = GetSlotUpdateEndAddr(temp_flag.active_slot)
+                       - GetSlotUpdateAddr(temp_flag.active_slot);
+    if(flash_write_offset + (uint32_t)len > slot_size)   /* never write past the slot */
+    {
+        g_flash_overflow = 1;
+        printf("Flash overflow off=%u len=%u size=%u\r\n",
+               (unsigned)flash_write_offset, (unsigned)len, (unsigned)slot_size);
+        return;
+    }
     HAL_FLASH_Unlock();
     if(last_byte_flag)
     {
@@ -387,7 +403,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
                 if(calc_crc == recv_crc)
                 {
                     //获取到升级命令，切换为升级下载状态
-                    temp_flag.state = OTA_DOWNLOADING;
                     // 提取4字节总长度（大端示例）
                     temp_flag.app_len = (cmd_buf[3] << 24) |
                                     (cmd_buf[4] << 16) |
@@ -395,6 +410,20 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
                                     (cmd_buf[6]);
                     g_total_packets = ((uint16_t)cmd_buf[7] << 8) | cmd_buf[8];
                     g_payload_len   = ((uint16_t)cmd_buf[9] << 8) | cmd_buf[10];
+                    {
+                        uint32_t slot_size = GetSlotUpdateEndAddr(temp_flag.active_slot)
+                                           - GetSlotUpdateAddr(temp_flag.active_slot);
+                        if(temp_flag.app_len == 0 || temp_flag.app_len > slot_size)
+                        {
+                            printf("app_len %u > slot %u, reject\r\n",
+                                   (unsigned)temp_flag.app_len, (unsigned)slot_size);
+                            send_ctrl(CTRL_FAIL);
+                        }
+                        else
+                        {
+                            temp_flag.state = OTA_DOWNLOADING;
+                        }
+                    }
                     printf("app_len=%08X\r\n", temp_flag.app_len);
                     //解析固件目标CRC（2字节大端）
                     temp_flag.new_app_crc = ((uint32_t)cmd_buf[12] << 24) | ((uint32_t)cmd_buf[13] << 16) | ((uint32_t)cmd_buf[14] << 8) | (uint32_t)cmd_buf[15];

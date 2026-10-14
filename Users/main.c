@@ -55,6 +55,8 @@ int main(void)
         temp_flag.boot_cnt = 0;
         OTA_Flag_Save(); // 写回Flash，清除异常DOWNLOADING标记
     }
+    wait_cmd:
+    cmd_idx = 0;
     printf("当前活跃APP区为:%s\r\n",ACTIVE_SLOT);
     printf("等待接收命令，判断当前状态中...\r\n");
     HAL_UART_Receive_IT(&uart1_handle, &ch_recv, 1);// 启动单字节中断接收【接收指令】
@@ -88,6 +90,11 @@ int main(void)
             printf("直接跳转新APP...\r\n");
             bootloader_jump_to_app(GetSlotUpdateAddr(temp_flag.active_slot),GetSlotUpdateEndAddr(temp_flag.active_slot));//跳转APP
         }
+        /* jump failed: the new slot looks invalid -> clear VERIFY state and wait for OTA */
+        temp_flag.state = OTA_IDLE;
+        temp_flag.boot_cnt = 0;
+        OTA_Flag_Save();
+        goto wait_cmd;
     }
     else if(temp_flag.state == OTA_DOWNLOADING)//升级下载状态
     {
@@ -118,14 +125,15 @@ int main(void)
     }
     else//空闲状态OTA_IDLE || OTA_RUN_FAIL
     {
-        if(temp_flag.active_slot == SLOT_A)
-        {
-            bootloader_jump_to_app(APP_A_START_ADDR,APP_A_END_ADDR);
-        }
-        else
-        {
-            bootloader_jump_to_app(APP_B_START_ADDR,APP_B_END_ADDR);
-        }
+        if(temp_flag.active_slot == SLOT_A) bootloader_jump_to_app(APP_A_START_ADDR,APP_A_END_ADDR);
+        else                                bootloader_jump_to_app(APP_B_START_ADDR,APP_B_END_ADDR);
+        /* active slot invalid -> try the backup slot */
+        printf("active slot invalid, try backup slot\r\n");
+        if(temp_flag.active_slot == SLOT_A) bootloader_jump_to_app(APP_B_START_ADDR,APP_B_END_ADDR);
+        else                                bootloader_jump_to_app(APP_A_START_ADDR,APP_A_END_ADDR);
+        /* both slots invalid -> stay in OTA mode and wait for a command */
+        printf("both slots invalid, stay in OTA mode\r\n");
+        goto wait_cmd;
         
     }
     while(1)

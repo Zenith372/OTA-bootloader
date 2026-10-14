@@ -34,7 +34,7 @@ CTRL_ACK   = 0x06   # 单片机 -> 电脑:本包接收成功
 CTRL_NAK   = 0x15   # 单片机 -> 电脑:本包校验失败,请重发
 CTRL_DONE  = 0x12   # 单片机 -> 电脑:全部包已收到,开始最终校验
 CTRL_OK    = 0x13   # 单片机 -> 电脑:最终 CRC 校验通过
-CTRL_FAIL  = 0x14   # 单片机 -> 电脑:最终 CRC 校验失败
+CTRL_FAIL  = 0x14   # 单片机 -> 电脑:出错了(命令被拒 / 写入越界 / 最终校验失败)
 
 CTRL_ALL   = {CTRL_READY, CTRL_ACK, CTRL_NAK, CTRL_DONE, CTRL_OK, CTRL_FAIL}
 BANNER     = "等待接收命令"   # 单片机开机打印的提示文字,用来判断板子已启动
@@ -241,7 +241,11 @@ def mode_upload(args):
         ser.flush()
 
         print("等待擦除完成(可能几秒钟)...")
-        if next_ctrl(ser, 20.0, {CTRL_READY}) != CTRL_READY:
+        r = next_ctrl(ser, 20.0, {CTRL_READY, CTRL_FAIL})
+        if r == CTRL_FAIL:
+            print("设备拒绝了升级请求(固件大小超出分区,或命令帧校验失败)。")
+            return 1
+        if r != CTRL_READY:
             print("没有收到 READY,擦除可能失败了。")
             return 1
         print("板子就绪,开始传固件...")
@@ -258,10 +262,13 @@ def mode_upload(args):
                 ser.write(frame)
                 ser.flush()
                 sent += 1
-                r = next_ctrl(ser, args.ack_timeout, {CTRL_ACK, CTRL_NAK})
+                r = next_ctrl(ser, args.ack_timeout, {CTRL_ACK, CTRL_NAK, CTRL_FAIL})
                 if r == CTRL_ACK:
                     ok = True
                     break
+                if r == CTRL_FAIL:
+                    print("\n设备报错并中止(疑似超出分区),第 %d 包停住。" % seq)
+                    return 1
                 why = "NAK" if r == CTRL_NAK else "超时"
                 print("  包 %d %s,重发第 %d 次" % (seq, why, attempt))
             if not ok:
