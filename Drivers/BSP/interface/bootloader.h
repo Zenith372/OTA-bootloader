@@ -64,9 +64,30 @@ void bootloader_finish_write(void);
 
 uint8_t OTA_Flag_Save(void);
 
-uint16_t crc16_ccitt(uint8_t *pBuf, uint32_t len);
+/* ===== OTA framing protocol (per-packet CRC32 + stop-and-wait ACK) ===== */
+#define FRAME_SYNC        0xA5
+#define FRAME_PAYLOAD_MAX 512
+#define FRAME_HDR_LEN     5
+#define FRAME_MAX_LEN     (FRAME_HDR_LEN + FRAME_PAYLOAD_MAX + 4)
+#define CMD_LEN           20
 
-uint8_t flash_crc_check(uint32_t start_addr, uint32_t total_len, uint16_t target_crc);
+#define CTRL_READY 0x11
+#define CTRL_ACK   0x06
+#define CTRL_NAK   0x15
+#define CTRL_DONE  0x12
+#define CTRL_OK    0x13
+#define CTRL_FAIL  0x14
+
+uint32_t crc32_iso(const uint8_t *p, uint32_t len);
+void     frame_parser_feed(const uint8_t *buf, uint16_t len);
+void     frame_reset(void);
+void     send_ctrl(uint8_t b);
+
+extern uint16_t g_total_packets;
+extern uint16_t g_payload_len;
+extern uint8_t  g_all_packets_done;
+
+uint8_t flash_crc_check(uint32_t start_addr, uint32_t total_len, uint32_t target_crc);
 
 void Flash_Read(uint32_t src_addr, volatile void *dst, uint32_t len);
 

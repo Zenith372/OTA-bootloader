@@ -10,33 +10,33 @@
 #define B "B"
 #define ACTIVE_SLOT temp_flag.active_slot == 1 ? A : B
 
-volatile uint32_t receive_all_len;  //æ–°å†™å…¥å›ºä»¶æ€»é•¿åº¦
-extern uint8_t rx_buf0[UART1_RX_BUF_SIZE];//DMAç¼“å†²åŒº0
-extern uint8_t rx_buf1[UART1_RX_BUF_SIZE];//DMAç¼“å†²åŒº1
-extern volatile uint16_t buf0_len;//DMAç¼“å†²åŒº0æ¥æ”¶é•¿åº¦
-extern volatile uint16_t buf1_len;//DMAç¼“å†²åŒº1æ¥æ”¶é•¿åº¦
-extern volatile uint8_t buf0_ready;//DMAç¼“å†²åŒº0æ¥æ”¶å®Œæˆ
-extern volatile uint8_t buf1_ready;//DMAç¼“å†²åŒº1æ¥æ”¶å®Œæˆ
+volatile uint32_t receive_all_len;  //ĞÂĞ´Èë¹Ì¼ş×Ü³¤¶È
+extern uint8_t rx_buf0[UART1_RX_BUF_SIZE];//DMA»º³åÇø0
+extern uint8_t rx_buf1[UART1_RX_BUF_SIZE];//DMA»º³åÇø1
+extern volatile uint16_t buf0_len;//DMA»º³åÇø0½ÓÊÕ³¤¶È
+extern volatile uint16_t buf1_len;//DMA»º³åÇø1½ÓÊÕ³¤¶È
+extern volatile uint8_t buf0_ready;//DMA»º³åÇø0½ÓÊÕÍê³É
+extern volatile uint8_t buf1_ready;//DMA»º³åÇø1½ÓÊÕÍê³É
 extern UART_HandleTypeDef uart1_handle;
-extern uint8_t cmd_buf[];//å‘½ä»¤å¸§ç¼“å†²åŒº
-extern uint8_t cmd_idx;//å‘½ä»¤å¸§å…ƒç´ ä½
-extern uint8_t ch_recv;//å•å­—èŠ‚æ¥æ”¶å‘½ä»¤å¸§çš„ç¼“å†²åŒº
-extern volatile OTA_FlagTypeDef temp_flag;//æ ‡å¿—ä½
-extern uint32_t flash_write_offset;//åç§»é‡
-extern uint8_t last_byte_flag;//é—ç•™æ ‡å¿—ä½
-extern volatile uint8_t a;//ä¸“ç”¨è°ƒè¯•æ ‡å¿—ä½
-extern uint8_t active_buf;//å“ªä¸€ä¸ªç¼“å†²åŒºæ­£åœ¨æ¥æ”¶
+extern uint8_t cmd_buf[];//ÃüÁîÖ¡»º³åÇø
+extern uint8_t cmd_idx;//ÃüÁîÖ¡ÔªËØÎ»
+extern uint8_t ch_recv;//µ¥×Ö½Ú½ÓÊÕÃüÁîÖ¡µÄ»º³åÇø
+extern volatile OTA_FlagTypeDef temp_flag;//±êÖ¾Î»
+extern uint32_t flash_write_offset;//Æ«ÒÆÁ¿
+extern uint8_t last_byte_flag;//ÒÅÁô±êÖ¾Î»
+extern volatile uint8_t a;//×¨ÓÃµ÷ÊÔ±êÖ¾Î»
+extern uint8_t active_buf;//ÄÄÒ»¸ö»º³åÇøÕıÔÚ½ÓÊÕ
 
 int main(void)
 {
-    HAL_Init();                         /* åˆå§‹åŒ–HALåº“ */
-    stm32_clock_init(RCC_PLL_MUL9); /* è®¾ç½®æ—¶é’Ÿ, 72Mhz */
-    //ã€å…³é”®ã€‘ä¸Šç”µç¬¬ä¸€æ—¶é—´å¼€å¯çœ‹é—¨ç‹—ï¼Œå…¨ç¨‹ä¿æŠ¤ */
-    IWDG_Boot_Init();//å¼€å¯çœ‹é—¨ç‹—
-    uart1_init(115200);//åˆå§‹åŒ–ä¸²å£
-    dma_init();//åˆå§‹åŒ–DMA
+    HAL_Init();                         /* ³õÊ¼»¯HAL¿â */
+    stm32_clock_init(RCC_PLL_MUL9); /* ÉèÖÃÊ±ÖÓ, 72Mhz */
+    //¡¾¹Ø¼ü¡¿ÉÏµçµÚÒ»Ê±¼ä¿ªÆô¿´ÃÅ¹·£¬È«³Ì±£»¤ */
+    IWDG_Boot_Init();//¿ªÆô¿´ÃÅ¹·
+    uart1_init(115200);//³õÊ¼»¯´®¿Ú
+    dma_init();//³õÊ¼»¯DMA
     Flash_Read(FLAG_START_ADDR, &temp_flag, sizeof(OTA_FlagTypeDef));
-    /* 1. æ ‡å¿—åŒºåˆæ³•æ€§æ ¡éªŒï¼šéæ³•åˆ™æ¢å¤é»˜è®¤å€¼ */
+    /* 1. ±êÖ¾ÇøºÏ·¨ĞÔĞ£Ñé£º·Ç·¨Ôò»Ö¸´Ä¬ÈÏÖµ */
     if(temp_flag.state != OTA_IDLE &&
        temp_flag.state != OTA_DOWNLOADING &&
        temp_flag.state != OTA_VERIFY_OK &&
@@ -46,38 +46,38 @@ int main(void)
         temp_flag.active_slot = SLOT_A;
         temp_flag.boot_cnt = 0;
         OTA_Flag_Save();
-        IWDG_Boot_Feed(); // æ“¦å†™åå–‚ç‹—
+        IWDG_Boot_Feed(); // ²ÁĞ´ºóÎ¹¹·
     }
-    // æ ¡éªŒçŠ¶æ€ï¼šåªå…è®¸ OTA_IDLE / OTA_VERIFY_OKï¼›å…¶ä½™å¼‚å¸¸çŠ¶æ€å…¨éƒ¨é‡ç½®
+    // Ğ£Ñé×´Ì¬£ºÖ»ÔÊĞí OTA_IDLE / OTA_VERIFY_OK£»ÆäÓàÒì³£×´Ì¬È«²¿ÖØÖÃ
     if(temp_flag.state != OTA_IDLE && temp_flag.state != OTA_VERIFY_OK)
     {
         temp_flag.state = OTA_IDLE;
         temp_flag.boot_cnt = 0;
-        OTA_Flag_Save(); // å†™å›Flashï¼Œæ¸…é™¤å¼‚å¸¸DOWNLOADINGæ ‡è®°
+        OTA_Flag_Save(); // Ğ´»ØFlash£¬Çå³ıÒì³£DOWNLOADING±ê¼Ç
     }
-    printf("å½“å‰æ´»è·ƒAPPåŒºä¸º:%s\r\n",ACTIVE_SLOT);
-    printf("ç­‰å¾…æ¥æ”¶å‘½ä»¤ï¼Œåˆ¤æ–­å½“å‰çŠ¶æ€ä¸­...\r\n");
-    HAL_UART_Receive_IT(&uart1_handle, &ch_recv, 1);// å¯åŠ¨å•å­—èŠ‚ä¸­æ–­æ¥æ”¶ã€æ¥æ”¶æŒ‡ä»¤ã€‘
+    printf("µ±Ç°»îÔ¾APPÇøÎª:%s\r\n",ACTIVE_SLOT);
+    printf("µÈ´ı½ÓÊÕÃüÁî£¬ÅĞ¶Ïµ±Ç°×´Ì¬ÖĞ...\r\n");
+    HAL_UART_Receive_IT(&uart1_handle, &ch_recv, 1);// Æô¶¯µ¥×Ö½ÚÖĞ¶Ï½ÓÊÕ¡¾½ÓÊÕÖ¸Áî¡¿
     SysTick->CTRL |= SysTick_CTRL_ENABLE_Msk;
     uint32_t start_tick = HAL_GetTick();
     while((HAL_GetTick() - start_tick) < 5000)
     {
         //printf("%d\r\n",a);
-        IWDG_Boot_Feed(); //å¾ªç¯å–‚ç‹—ï¼Œé˜²æ­¢çœ‹é—¨ç‹—å¤ä½
-        // å¦‚æœå·²ç»æ”¶åˆ°å®Œæ•´å‡çº§å‘½ä»¤ï¼Œæå‰è·³å‡ºç­‰å¾…çª—å£
+        IWDG_Boot_Feed(); //Ñ­»·Î¹¹·£¬·ÀÖ¹¿´ÃÅ¹·¸´Î»
+        // Èç¹ûÒÑ¾­ÊÕµ½ÍêÕûÉı¼¶ÃüÁî£¬ÌáÇ°Ìø³öµÈ´ı´°¿Ú
         if(temp_flag.state == OTA_DOWNLOADING)
         {
             printf("111");
             break;
         }
     }
-    if(temp_flag.state == OTA_VERIFY_OK)//å›ºä»¶ä¸‹è½½å¥½åçš„åˆ¤æ–­çŠ¶æ€
+    if(temp_flag.state == OTA_VERIFY_OK)//¹Ì¼şÏÂÔØºÃºóµÄÅĞ¶Ï×´Ì¬
     {
         temp_flag.boot_cnt++;
         OTA_Flag_Save();
         if(temp_flag.boot_cnt >= 3)
         {
-            //è¿ç»­2æ¬¡å¯åŠ¨å¤±è´¥ï¼Œæ ‡è®°å¤±è´¥ï¼Œå›æ»šåˆ°AåŒºï¼ˆæ—§å›ºä»¶ï¼‰
+            //Á¬Ğø2´ÎÆô¶¯Ê§°Ü£¬±ê¼ÇÊ§°Ü£¬»Ø¹öµ½AÇø£¨¾É¹Ì¼ş£©
             temp_flag.state = OTA_RUN_NEW_FAIL;
             temp_flag.boot_cnt = 0;
             OTA_Flag_Save();
@@ -85,36 +85,38 @@ int main(void)
         }
         else
         {
-            printf("ç›´æ¥è·³è½¬æ–°APP...\r\n");
-            bootloader_jump_to_app(GetSlotUpdateAddr(temp_flag.active_slot),GetSlotUpdateEndAddr(temp_flag.active_slot));//è·³è½¬APP
+            printf("Ö±½ÓÌø×ªĞÂAPP...\r\n");
+            bootloader_jump_to_app(GetSlotUpdateAddr(temp_flag.active_slot),GetSlotUpdateEndAddr(temp_flag.active_slot));//Ìø×ªAPP
         }
     }
-    else if(temp_flag.state == OTA_DOWNLOADING)//å‡çº§ä¸‹è½½çŠ¶æ€
+    else if(temp_flag.state == OTA_DOWNLOADING)//Éı¼¶ÏÂÔØ×´Ì¬
     {
-        //==== 1. æ”¶åˆ°OTAå¼€å§‹æŒ‡ä»¤ï¼Œè¿›å…¥å›ºä»¶æ¥æ”¶çŠ¶æ€ ====
+        //==== 1. ÊÕµ½OTA¿ªÊ¼Ö¸Áî£¬½øÈë¹Ì¼ş½ÓÊÕ×´Ì¬ ====
         OTA_Flag_Save();
-        printf("å‘½ä»¤å¸§æ ¼å¼æ­£ç¡®,è¿›å…¥ä¸‹è½½å›ºä»¶çŠ¶æ€,ç­‰å¾…ä¸‹è½½å›ºä»¶åŒ…è¿›è¡Œå‡çº§\r\n");
-        HAL_UART_AbortReceive_IT(&uart1_handle);//å…³ RXNE ä¸­æ–­ + ä¿®æ­£ HAL çŠ¶æ€ã€‚
-        //åˆå§‹åŒ–åç§»é‡ï¼Œé—ç•™å­—èŠ‚ï¼Œæ¥æ”¶æ€»é•¿åº¦
+        printf("ÃüÁîÖ¡¸ñÊ½ÕıÈ·,½øÈëÏÂÔØ¹Ì¼ş×´Ì¬,µÈ´ıÏÂÔØ¹Ì¼ş°ü½øĞĞÉı¼¶\r\n");
+        HAL_UART_AbortReceive_IT(&uart1_handle);//¹Ø RXNE ÖĞ¶Ï + ĞŞÕı HAL ×´Ì¬¡£
+        //³õÊ¼»¯Æ«ÒÆÁ¿£¬ÒÅÁô×Ö½Ú£¬½ÓÊÕ×Ü³¤¶È
         flash_write_offset = 0;
         last_byte_flag = 0;
         receive_all_len = 0;
-        if(!Flash_erase())//flashçš„éå½“å‰æ´»è·ƒAPPåŒºå…¨æ“¦
+        frame_reset();
+        if(!Flash_erase())//flashµÄ·Çµ±Ç°»îÔ¾APPÇøÈ«²Á
         {
-            printf("æ“¦é™¤å¤±è´¥,ä¸­æ­¢æœ¬æ¬¡å‡çº§\r\n");
+            printf("²Á³ıÊ§°Ü,ÖĞÖ¹±¾´ÎÉı¼¶\r\n");
             temp_flag.state = OTA_IDLE;
             OTA_Flag_Save();
-            return 1;      // å›åˆ°ç­‰å¾…å‘½ä»¤,ä¸å¯åŠ¨ DMA
+            return 1;      // »Øµ½µÈ´ıÃüÁî,²»Æô¶¯ DMA
         }
-        printf("æ“¦é™¤æˆåŠŸ\r\n");
-        // å¯åŠ¨DMAä¹’ä¹“æ¥æ”¶å›ºä»¶
+        printf("²Á³ı³É¹¦\r\n");
+        // Æô¶¯DMAÆ¹ÅÒ½ÓÊÕ¹Ì¼ş
         HAL_StatusTypeDef dma_ret = HAL_UART_Receive_DMA(&uart1_handle, rx_buf0, UART1_RX_BUF_SIZE);
-        // æ‰“å¼€IDLEä¸­æ–­å‰ï¼Œå…ˆæ¸…é™¤ä¸€æ¬¡æ®‹ç•™çš„IDLEæ ‡å¿—
+        // ´ò¿ªIDLEÖĞ¶ÏÇ°£¬ÏÈÇå³ıÒ»´Î²ĞÁôµÄIDLE±êÖ¾
         __HAL_UART_CLEAR_IDLEFLAG(&uart1_handle);
-        __HAL_UART_ENABLE_IT(&uart1_handle, UART_IT_IDLE);//æ‰“å¼€ç©ºé—²ä¸­æ–­
-        printf("å¯åŠ¨DMAæ¥æ”¶, ret=%d\r\n", dma_ret);  // æ–°å¢ï¼š0=å¯åŠ¨æˆåŠŸ
+        __HAL_UART_ENABLE_IT(&uart1_handle, UART_IT_IDLE);
+        send_ctrl(CTRL_READY);   /* flash erased, ready for packets */
+        printf("Æô¶¯DMA½ÓÊÕ, ret=%d\r\n", dma_ret);  // ĞÂÔö£º0=Æô¶¯³É¹¦
     }
-    else//ç©ºé—²çŠ¶æ€OTA_IDLE || OTA_RUN_FAIL
+    else//¿ÕÏĞ×´Ì¬OTA_IDLE || OTA_RUN_FAIL
     {
         if(temp_flag.active_slot == SLOT_A)
         {
@@ -128,63 +130,44 @@ int main(void)
     }
     while(1)
     {
-        // ========== æ£€æµ‹buf0å°±ç»ª ==========
         if(buf0_ready == 1)
         {
-            // ä¸´ç•ŒåŒºï¼šé˜²æ­¢è¯»å–å˜é‡ä¸­é€”è¢«DMAä¸­æ–­æ”¹å†™
-            __disable_irq();////å…³é—­ä¸­æ–­
+            __disable_irq();
             uint16_t len = buf0_len;
-            __enable_irq();////ä½¿èƒ½ä¸­æ–­
-            Flash_write(rx_buf0, len);// å¤„ç†ç¼“å†²åŒºï¼šæŠŠrx_buf0[0 ~ len-1]å†™å…¥Flash
-            receive_all_len += len;//æ¯æ¬¡å†™å…¥ï¼Œè®°å½•å†™å…¥å­—èŠ‚é•¿åº¦
-            __disable_irq();//å…³é—­ä¸­æ–­
-            buf0_ready = 0;//buf0å°±ç»ªæ ‡å¿—å…³é—­
-            __enable_irq();//ä½¿èƒ½ä¸­æ–­
-            IWDG_Boot_Feed(); // ? æ–°å¢ï¼šå†™å®Œä¸€åŒ…å–‚ä¸€æ¬¡ç‹—ï¼ŒFlashå†™å…¥è€—æ—¶æœ€é•¿
+            buf0_ready = 0;
+            __enable_irq();
+            frame_parser_feed(rx_buf0, len);
         }
-        // ========== æ£€æµ‹buf1å°±ç»ª ==========
         else if(buf1_ready == 1)
         {
-            __disable_irq();//å…³é—­ä¸­æ–­
+            __disable_irq();
             uint16_t len = buf1_len;
-            __enable_irq();//ä½¿èƒ½ä¸­æ–­
-            Flash_write(rx_buf1, len);// å¤„ç†ç¼“å†²åŒºï¼šæŠŠrx_buf1[0 ~ len-1]å†™å…¥Flash
-            receive_all_len += len;//æ¯æ¬¡å†™å…¥ï¼Œè®°å½•å†™å…¥å­—èŠ‚é•¿åº¦
-            __disable_irq();//å…³é—­ä¸­æ–­
-            buf1_ready = 0;//buf1å°±ç»ªæ ‡å¿—å…³é—­
-            __enable_irq();//ä½¿èƒ½ä¸­æ–­
-            IWDG_Boot_Feed(); // ? æ–°å¢ï¼šå†™å®Œä¸€åŒ…å–‚ä¸€æ¬¡ç‹—ï¼ŒFlashå†™å…¥è€—æ—¶æœ€é•¿
+            buf1_ready = 0;
+            __enable_irq();
+            frame_parser_feed(rx_buf1, len);
         }
-        else if(receive_all_len >= temp_flag.app_len)//æ¥æ”¶å­—èŠ‚é•¿åº¦è¾¾åˆ°å›ºä»¶å­—èŠ‚é•¿åº¦
+        else if(g_all_packets_done)
         {
-            IWDG_Boot_Feed(); // ? æ–°å¢ï¼šå¤„ç†æœ€åå­—èŠ‚å‰å…ˆå–‚ç‹—
-            bootloader_finish_write(); // å†™å…¥æœ€åé—ç•™å­—èŠ‚
-            if(flash_crc_check(GetSlotUpdateAddr(temp_flag.active_slot), temp_flag.app_len, temp_flag.new_app_crc))//CRCå›ºä»¶æ ¡éªŒ
+            bootloader_finish_write();
+            if(flash_crc_check(GetSlotUpdateAddr(temp_flag.active_slot), temp_flag.app_len, temp_flag.new_app_crc))
             {
-                printf("æ–°å›ºä»¶æ€»å­—èŠ‚æ•°: %d\r\n",temp_flag.app_len);
-                printf("CRCæ ¡éªŒé€šè¿‡,å‡çº§å®Œæˆ, æ‰§è¡Œæ–°APP\r\n");
+                send_ctrl(CTRL_OK);
+                printf("OTA ok, CRC32 pass, jump to new APP\r\n");
                 temp_flag.state = OTA_VERIFY_OK;
-                OTA_Flag_Save();//å†™å…¥æ ‡å¿—ä½
-                IWDG_Boot_Feed(); // ? æ–°å¢ï¼šå†™æ ‡å¿—åå–‚ç‹—ï¼Œä¿è¯å¤ä½å‰ä¸è¶…æ—¶
-                __disable_irq();//å…³é—­ä¸­æ–­
-                // å†…æ ¸è½¯ä»¶å¤ä½ï¼šSystem Reset Request
-                NVIC_SystemReset();//å¤ä½ï¼Œæ‰§è¡Œæ›´æ–°å¥½çš„app
+                OTA_Flag_Save();
+                IWDG_Boot_Feed();
+                __disable_irq();
+                NVIC_SystemReset();
             }
             else
             {
-                printf("%04x",temp_flag.new_app_crc);
-                printf("å›ºä»¶CRCæ ¡éªŒå¤±è´¥\r\n");
-                printf("è¯·é‡æ–°å‡çº§\r\n");
-                // æ ¡éªŒå¤±è´¥ï¼Œæ¸…é™¤å‡çº§æ ‡å¿—ï¼Œç­‰å¾…é‡ä¼ 
-                OTA_Flag_Save();
+                send_ctrl(CTRL_FAIL);
+                printf("OTA fail, CRC32 mismatch\r\n");
+                g_all_packets_done = 0;
             }
         }
-        // ========== ç©ºé—²ç­‰å¾…ï¼ˆæ— æ•°æ®ã€æœªå®Œæˆï¼‰ ==========
-        else
-        {
-            IWDG_Boot_Feed(); // ? æ–°å¢ï¼šç©ºé—²ç­‰å¾…æ—¶ä¹Ÿå®šæœŸå–‚ç‹—
-        }
-	}
+        IWDG_Boot_Feed();
+    }
 
 }
                 

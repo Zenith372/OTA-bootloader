@@ -7,40 +7,123 @@ extern UART_HandleTypeDef uart1_handle;
 extern DMA_HandleTypeDef dma_handle;
 
 
-uint32_t flash_write_offset = 0;//è®°å½•å½“å‰å†™å…¥ç¨‹åºçš„åç§»é‡
-uint8_t last_byte = 0;  //é—ç•™å­—èŠ‚
-uint8_t last_byte_flag = 0;  //è¡¨ç¤ºæ˜¯å¦æœ‰é—ç•™å­—èŠ‚
-uint8_t active_buf = 0;  //0ä»£è¡¨buf0æ­£åœ¨å†™å…¥ï¼Œ1ä»£è¡¨buf1æ­£åœ¨å†™å…¥
-uint8_t rx_buf0[UART1_RX_BUF_SIZE];  // ç¼“å†²åŒº0ï¼ŒSRAMä¸­ç‹¬ç«‹åœ°å€
-uint8_t rx_buf1[UART1_RX_BUF_SIZE];  // ç¼“å†²åŒº1ï¼ŒSRAMä¸­ç‹¬ç«‹åœ°å€ /*è¿™ä¿©ä¹Ÿæ˜¯UART1æ¥æ”¶ç¼“å†²åŒº *///ç”±dmaæ¬è¿åˆ°è¿™é‡Œ
-volatile uint8_t buf0_ready;//buf0ç¼“å†²åŒºå°±ç»ªï¼ˆç¼“å†²åŒºå·²æ»¡ï¼‰
-volatile uint16_t buf0_len;//buf0ç¼“å†²åŒºæ¥æ”¶åˆ°çš„å­—èŠ‚é•¿åº¦
-volatile uint8_t buf1_ready;//buf1ç¼“å†²åŒºå°±ç»ªï¼ˆç¼“å†²åŒºå·²æ»¡ï¼‰
-volatile uint16_t buf1_len;//buf1ç¼“å†²åŒºæ¥æ”¶åˆ°çš„å­—èŠ‚é•¿åº¦
-extern volatile uint32_t receive_all_len;  //æ–°å†™å…¥å›ºä»¶æ€»é•¿åº¦
+uint32_t flash_write_offset = 0;//¼ÇÂ¼µ±Ç°Ğ´Èë³ÌĞòµÄÆ«ÒÆÁ¿
+uint8_t last_byte = 0;  //ÒÅÁô×Ö½Ú
+uint8_t last_byte_flag = 0;  //±íÊ¾ÊÇ·ñÓĞÒÅÁô×Ö½Ú
+uint8_t active_buf = 0;  //0´ú±íbuf0ÕıÔÚĞ´Èë£¬1´ú±íbuf1ÕıÔÚĞ´Èë
+uint8_t rx_buf0[UART1_RX_BUF_SIZE];  // »º³åÇø0£¬SRAMÖĞ¶ÀÁ¢µØÖ·
+uint8_t rx_buf1[UART1_RX_BUF_SIZE];  // »º³åÇø1£¬SRAMÖĞ¶ÀÁ¢µØÖ· /*ÕâÁ©Ò²ÊÇUART1½ÓÊÕ»º³åÇø *///ÓÉdma°áÔËµ½ÕâÀï
+volatile uint8_t buf0_ready;//buf0»º³åÇø¾ÍĞ÷£¨»º³åÇøÒÑÂú£©
+volatile uint16_t buf0_len;//buf0»º³åÇø½ÓÊÕµ½µÄ×Ö½Ú³¤¶È
+volatile uint8_t buf1_ready;//buf1»º³åÇø¾ÍĞ÷£¨»º³åÇøÒÑÂú£©
+volatile uint16_t buf1_len;//buf1»º³åÇø½ÓÊÕµ½µÄ×Ö½Ú³¤¶È
+extern volatile uint32_t receive_all_len;  //ĞÂĞ´Èë¹Ì¼ş×Ü³¤¶È
 
-// å‘½ä»¤è§£æç›¸å…³
-//ä¾‹å¦‚ï¼šA55A0100001184D5817B74
-//- OTA å¼€å§‹æŒ‡ä»¤ï¼š`A5 5A 01 00 00 11 84 D5 81 7B 74`    å…±11ä¸ªå­—èŠ‚
-#define CMD_LEN 11 //å‘½ä»¤å¸§æ€»é•¿åº¦
-uint8_t cmd_buf[CMD_LEN];//å‘½ä»¤å¸§ç¼“å†²åŒº
-uint8_t cmd_idx = 0;//å·²æ¥æ”¶åˆ°çš„å‘½ä»¤å¸§å­—èŠ‚æ•°
-uint8_t ch_recv= 0;//å•å­—èŠ‚æ¥æ”¶å‘½ä»¤å¸§
-volatile uint8_t  g_is_full_packet = 0;//å½“å‰åŒ…æ˜¯å¦æ˜¯æ»¡åŒ…
+// ÃüÁî½âÎöÏà¹Ø
+//ÀıÈç£ºA55A0100001184D5817B74
+//- OTA start frame: A5 5A 01 | app_len(4) | total(2) | payload(2) | ver(1) | whole_crc32(4) | frame_crc32(4) = 20 bytes
+uint8_t cmd_buf[CMD_LEN];//ÃüÁîÖ¡»º³åÇø
+uint8_t cmd_idx = 0;//ÒÑ½ÓÊÕµ½µÄÃüÁîÖ¡×Ö½ÚÊı
+uint8_t ch_recv= 0;//µ¥×Ö½Ú½ÓÊÕÃüÁîÖ¡
+volatile uint8_t  g_is_full_packet = 0;//µ±Ç°°üÊÇ·ñÊÇÂú°ü
 volatile OTA_FlagTypeDef temp_flag;
 typedef void (*pFunc)(void);
 
-volatile uint8_t a=0;//è°ƒè¯•ä¸“ç”¨æ ‡å¿—ä½
+/* ===== OTA frame parser (per-packet CRC32 + stop-and-wait ACK) ===== */
+static uint8_t  frame_buf[FRAME_MAX_LEN];
+static uint16_t frame_idx  = 0;
+static uint16_t frame_need = 0;
+static uint16_t g_expect_seq = 1;
+uint16_t g_total_packets = 0;
+uint16_t g_payload_len   = 0;
+uint8_t  g_all_packets_done = 0;
 
-//åŸç†ï¼ˆè€ HAL åº“ F103 å¯ç”¨ï¼‰
-//1.è°ƒç”¨ `HAL_UART_Receive_DMA(&huart1, buf, 256)` å¯åŠ¨ DMA æ¬è¿
-//2.æ‰‹åŠ¨å¼€å¯ä¸²å£ IDLE ä¸­æ–­ï¼š`__HAL_UART_ENABLE_IT(&huart1, UART_IT_IDLE);`
-//3.åœ¨ `USART1_IRQHandler` é‡Œé¢æ£€æµ‹ IDLE æ ‡å¿—ï¼Œ**ç©ºé—²ä¸­æ–­è§¦å‘æ—¶ï¼Œè¯»å– NDTR å¯„å­˜å™¨ç®—å‡ºæœ¬æ¬¡æ”¶åˆ°å¤šå°‘å­—èŠ‚**
+void frame_reset(void)
+{
+    frame_idx          = 0;
+    frame_need         = 0;
+    g_expect_seq       = 1;
+    g_all_packets_done = 0;
+}
+
+void send_ctrl(uint8_t b)
+{
+    while ((USART1->SR & 0x40) == 0);
+    USART1->DR = b;
+}
+
+static void frame_on_complete(void)
+{
+    uint16_t plen = (uint16_t)frame_buf[3] | ((uint16_t)frame_buf[4] << 8);
+    uint16_t seq  = (uint16_t)frame_buf[1] | ((uint16_t)frame_buf[2] << 8);
+    uint16_t idx  = FRAME_HDR_LEN + plen;
+    uint32_t rcrc = (uint32_t)frame_buf[idx]
+                  | ((uint32_t)frame_buf[idx + 1] << 8)
+                  | ((uint32_t)frame_buf[idx + 2] << 16)
+                  | ((uint32_t)frame_buf[idx + 3] << 24);
+    uint32_t ccrc = crc32_iso(frame_buf, idx);
+
+    /* duplicate of last written packet (ACK lost): re-ACK only, never rewrite */
+    if (seq == (uint16_t)(g_expect_seq - 1))
+    {
+        send_ctrl(CTRL_ACK);
+        return;
+    }
+    /* wrong seq or CRC -> NAK, sender resends */
+    if (seq != g_expect_seq || ccrc != rcrc)
+    {
+        printf("pkt %u bad seq=%u crc=%08X/%08X\r\n", g_expect_seq, seq, ccrc, rcrc);
+        send_ctrl(CTRL_NAK);
+        return;
+    }
+    /* good packet -> write payload to flash */
+    Flash_write(&frame_buf[FRAME_HDR_LEN], plen);
+    receive_all_len += plen;
+    g_expect_seq++;
+
+    if (g_expect_seq > g_total_packets)
+    {
+        g_all_packets_done = 1;
+        send_ctrl(CTRL_DONE);
+    }
+    send_ctrl(CTRL_ACK);
+}
+
+void frame_parser_feed(const uint8_t *buf, uint16_t len)
+{
+    for (uint16_t i = 0; i < len; i++)
+    {
+        uint8_t b = buf[i];
+        if (frame_idx == 0 && b != FRAME_SYNC) continue;
+        frame_buf[frame_idx++] = b;
+
+        if (frame_idx == FRAME_HDR_LEN)
+        {
+            uint16_t plen = (uint16_t)frame_buf[3] | ((uint16_t)frame_buf[4] << 8);
+            if (plen == 0 || plen > FRAME_PAYLOAD_MAX) { frame_idx = 0; continue; }
+            frame_need = FRAME_HDR_LEN + plen + 4;
+        }
+        if (frame_need != 0 && frame_idx >= frame_need)
+        {
+            frame_on_complete();
+            frame_idx  = 0;
+            frame_need = 0;
+        }
+    }
+}
+
+
+volatile uint8_t a=0;//µ÷ÊÔ×¨ÓÃ±êÖ¾Î»
+
+//Ô­Àí£¨ÀÏ HAL ¿â F103 ¿ÉÓÃ£©
+//1.µ÷ÓÃ `HAL_UART_Receive_DMA(&huart1, buf, 256)` Æô¶¯ DMA °áÔË
+//2.ÊÖ¶¯¿ªÆô´®¿Ú IDLE ÖĞ¶Ï£º`__HAL_UART_ENABLE_IT(&huart1, UART_IT_IDLE);`
+//3.ÔÚ `USART1_IRQHandler` ÀïÃæ¼ì²â IDLE ±êÖ¾£¬**¿ÕÏĞÖĞ¶Ï´¥·¢Ê±£¬¶ÁÈ¡ NDTR ¼Ä´æÆ÷Ëã³ö±¾´ÎÊÕµ½¶àÉÙ×Ö½Ú**
 void USART1_IRQHandler(void)//
 {
-    if (__HAL_UART_GET_FLAG(&uart1_handle, UART_FLAG_IDLE) != RESET)        /* è·å–æ¥æ”¶ç©ºé—²ä¸­æ–­æ ‡å¿—ä½æ˜¯å¦è¢«ç½®ä½ */
+    if (__HAL_UART_GET_FLAG(&uart1_handle, UART_FLAG_IDLE) != RESET)        /* »ñÈ¡½ÓÊÕ¿ÕÏĞÖĞ¶Ï±êÖ¾Î»ÊÇ·ñ±»ÖÃÎ» */
     {	
-        //æ¸…é™¤ç©ºé—²ä¸­æ–­ï¼Œå¦åˆ™ä¼šä¸€ç›´è§¦å‘ç©ºé—²ä¸­æ–­
+        //Çå³ı¿ÕÏĞÖĞ¶Ï£¬·ñÔò»áÒ»Ö±´¥·¢¿ÕÏĞÖĞ¶Ï
         __HAL_UART_CLEAR_IDLEFLAG(&uart1_handle);
         if(g_is_full_packet)
         {
@@ -48,19 +131,14 @@ void USART1_IRQHandler(void)//
             return;
         }
         
-        //åœæ­¢ DMA ä¼ è¾“ï¼Œé˜²æ­¢å¹²æ‰°
+        //Í£Ö¹ DMA ´«Êä£¬·ÀÖ¹¸ÉÈÅ
         HAL_UART_DMAStop(&uart1_handle);
         for(volatile uint16_t i=0;i<200;i++);
-        //è·å–æ¥æ”¶åˆ°çš„æ•°æ®é•¿åº¦
-        uint16_t recv_len = UART1_RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(&dma_handle); //å·²ç»æ¥æ”¶åˆ°çš„æ•°æ®é•¿åº¦
-        uint32_t remain_bytes = temp_flag.app_len - receive_all_len;
-        if(recv_len > remain_bytes)
+        //»ñÈ¡½ÓÊÕµ½µÄÊı¾İ³¤¶È
+        uint16_t recv_len = UART1_RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(&dma_handle); //ÒÑ¾­½ÓÊÕµ½µÄÊı¾İ³¤¶È
+        if(recv_len > 0 && (recv_len != UART1_RX_BUF_SIZE)) // ÓĞÊ£ÓàÊı¾İ
         {
-            recv_len = (uint16_t)remain_bytes; // å¼ºåˆ¶è£å‰ªåˆ°152å­—èŠ‚
-        }
-        if(recv_len > 0 && (recv_len != UART1_RX_BUF_SIZE)) // æœ‰å‰©ä½™æ•°æ®
-        {
-            if(active_buf == 0)//buf0ç©ºé—²
+            if(active_buf == 0)//buf0¿ÕÏĞ
             {
                 buf0_len = recv_len;
                 buf0_ready = 1;
@@ -71,9 +149,9 @@ void USART1_IRQHandler(void)//
                 buf1_ready = 1;
             }
         }
-        if(receive_all_len < temp_flag.app_len) // è¿˜æ²¡æ¥æ”¶å®Œ
+        if(!g_all_packets_done)
         {
-            // åˆ‡æ¢ DMA åˆ°å¦ä¸€ä¸ªç¼“å†²åŒº
+            // ÇĞ»» DMA µ½ÁíÒ»¸ö»º³åÇø
             if(active_buf == 0)
             {
                 HAL_UART_Receive_DMA(&uart1_handle, rx_buf1, UART1_RX_BUF_SIZE);
@@ -85,7 +163,7 @@ void USART1_IRQHandler(void)//
                 active_buf = 0;
             }
         }
-        // æ”¶åˆ°æœ€ååŠåŒ…ï¼Œæœ¬æ¬¡OTAæ¥æ”¶ç»“æŸï¼Œä¸å†é‡å¯DMA
+        // ÊÕµ½×îºó°ë°ü£¬±¾´ÎOTA½ÓÊÕ½áÊø£¬²»ÔÙÖØÆôDMA
     }
     HAL_UART_IRQHandler(&uart1_handle);
 }
@@ -101,15 +179,15 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
     {
         if(__HAL_UART_GET_FLAG(huart, UART_FLAG_ORE) != RESET)
         {
-            printf("ORE Overflow\r\n"); // æº¢å‡ºé”™è¯¯ = å¤„ç†ä¸è¿‡æ¥ä¸¢åŒ…
-            //F1å¿…é¡»è¯»SRå†è¯»DRï¼Œdummyä»…å ä½ï¼Œä¸èƒ½ä¼˜åŒ–æ‰
+            printf("ORE Overflow\r\n"); // Òç³ö´íÎó = ´¦Àí²»¹ıÀ´¶ª°ü
+            //F1±ØĞë¶ÁSRÔÙ¶ÁDR£¬dummy½öÕ¼Î»£¬²»ÄÜÓÅ»¯µô
             volatile uint16_t dummy;
             dummy = huart->Instance->SR;
             dummy = huart->Instance->DR;
         
-            //æ¸…é™¤é”™è¯¯çŠ¶æ€ï¼Œé‡å¯æ¥æ”¶
+            //Çå³ı´íÎó×´Ì¬£¬ÖØÆô½ÓÊÕ
             huart->ErrorCode = HAL_UART_ERROR_NONE;
-            // ç”¨ DMA ç‰ˆæœ¬é‡å¯ï¼ŒæŒ‡å‘å½“å‰æ´»è·ƒç¼“å†²åŒº
+            // ÓÃ DMA °æ±¾ÖØÆô£¬Ö¸Ïòµ±Ç°»îÔ¾»º³åÇø
             if(active_buf == 0)
             {
                 HAL_UART_Receive_DMA(&uart1_handle, rx_buf0, UART1_RX_BUF_SIZE);
@@ -124,19 +202,19 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 
 void bootloader_jump_to_app(uint32_t app_addr,uint32_t end_addr)
 {
-    //æ ¡éªŒ1
-    //æ ˆé¡¶åœ°å€çš„å€¼
+    //Ğ£Ñé1
+    //Õ»¶¥µØÖ·µÄÖµ
     uint32_t app_stack_ptr = *(volatile uint32_t*)(app_addr);
     uint32_t app_reset_handle = *(volatile uint32_t*)(app_addr + 4);
 
-    //1.1æ ¡éªŒæ ˆé¡¶åœ°å€
+    //1.1Ğ£ÑéÕ»¶¥µØÖ·
     if((app_stack_ptr & 0xFFFF0000) != STACK_ADDR)
     {
         printf("stack addr error\n");
         return;
     }
     
-    //1.2æ ¡éªŒå¤ä½ä¸­æ–­åœ°å€
+    //1.2Ğ£Ñé¸´Î»ÖĞ¶ÏµØÖ·
     if(app_reset_handle <= app_addr || app_reset_handle >= end_addr)
     {
         printf("%08X  %08X  %08X\n",app_addr,end_addr, app_reset_handle);
@@ -147,30 +225,30 @@ void bootloader_jump_to_app(uint32_t app_addr,uint32_t end_addr)
     HAL_NVIC_DisableIRQ(DMA1_Channel5_IRQn);
     HAL_NVIC_DisableIRQ(USART1_IRQn);
     
-    //å…³é—­systick
+    //¹Ø±Õsystick
     SysTick->CTRL = 0;
     SysTick->LOAD = 0;
     SysTick->VAL = 0;
-    //æ³¨é”€HALåº“
+    //×¢ÏúHAL¿â
     //HAL_DeInit();
     
-    //2.1å…³é—­ä¸­æ–­
+    //2.1¹Ø±ÕÖĞ¶Ï
     __disable_irq();
-    //2.2è®¾ç½®å †æ ˆæŒ‡é’ˆ
+    //2.2ÉèÖÃ¶ÑÕ»Ö¸Õë
     __set_MSP(app_stack_ptr);
-    //2.3é‡å®šå‘ä¸­æ–­å‘é‡è¡¨
+    //2.3ÖØ¶¨ÏòÖĞ¶ÏÏòÁ¿±í
     SCB->VTOR = app_addr;
-    __DSB();//å†…å­˜å±éšœ
+    __DSB();//ÄÚ´æÆÁÕÏ
     __ISB();
     
-    /* è·³è½¬å‰å–‚ä¸€æ¬¡ç‹—ï¼Œç»™Appé¢„ç•™å……è¶³å¯åŠ¨æ—¶é—´ */
+    /* Ìø×ªÇ°Î¹Ò»´Î¹·£¬¸øAppÔ¤Áô³ä×ãÆô¶¯Ê±¼ä */
     IWDG_Boot_Feed();
-    //2.4è·³è½¬åˆ°Aç¨‹åºå¤ä½ä¸­æ–­
+    //2.4Ìø×ªµ½A³ÌĞò¸´Î»ÖĞ¶Ï
     pFunc jump_to_app = (pFunc)app_reset_handle;
-    jump_to_app();//è·³è½¬ä¹‹åçš„å†…å®¹æ˜¯æ‰§è¡Œä¸åˆ°çš„
+    jump_to_app();//Ìø×ªÖ®ºóµÄÄÚÈİÊÇÖ´ĞĞ²»µ½µÄ
 }
 
-void Flash_write(uint8_t *buf, uint16_t len)//å†™å…¥flash
+void Flash_write(uint8_t *buf, uint16_t len)//Ğ´Èëflash
 {
     HAL_StatusTypeDef ret;
     uint16_t i = 0;
@@ -186,7 +264,7 @@ void Flash_write(uint8_t *buf, uint16_t len)//å†™å…¥flash
         last_byte_flag = 0;
     }
 
-    // ä¸¤ä¸¤æ‹¼æ¥å†™å…¥
+    // Á½Á½Æ´½ÓĞ´Èë
     for(; i + 1 < len; i += 2)
     {
         data16 = buf[i] | (buf[i+1] << 8);
@@ -198,18 +276,18 @@ void Flash_write(uint8_t *buf, uint16_t len)//å†™å…¥flash
         flash_write_offset += 2;
     }
 
-    if(i < len)//å¤„ç†é—ç•™å­—èŠ‚åå‰©ä¸‹çš„ä¸ºå¥‡æ•°é•¿åº¦ï¼Œåˆ™ä¼šå‰©ä¸‹ä¸€ä¸ªå­—èŠ‚
+    if(i < len)//´¦ÀíÒÅÁô×Ö½ÚºóÊ£ÏÂµÄÎªÆæÊı³¤¶È£¬Ôò»áÊ£ÏÂÒ»¸ö×Ö½Ú
     {
         last_byte = buf[i];
-        last_byte_flag = 1;//æœ‰é—ç•™
+        last_byte_flag = 1;//ÓĞÒÅÁô
     }
     HAL_FLASH_Lock();
 }   
 
-/* æ“¦é™¤å‡çº§ç›®æ ‡åŒºï¼ˆéæ´»åŠ¨åŒºï¼‰ã€‚è¿”å› 1=æˆåŠŸï¼Œ0=å¤±è´¥ */
-uint8_t Flash_erase(void)//æ“¦é™¤ç„¶åè°ƒç”¨å†™å…¥flash
+/* ²Á³ıÉı¼¶Ä¿±êÇø£¨·Ç»î¶¯Çø£©¡£·µ»Ø 1=³É¹¦£¬0=Ê§°Ü */
+uint8_t Flash_erase(void)//²Á³ıÈ»ºóµ÷ÓÃĞ´Èëflash
 {
-    // ä¸€æ¬¡æ€§æ“¦é™¤æ•´ä¸ªAPPåŒºåŸŸ
+    // Ò»´ÎĞÔ²Á³ıÕû¸öAPPÇøÓò
     HAL_FLASH_Unlock();
     FLASH_EraseInitTypeDef erase_init;
     uint32_t start = GetSlotUpdateAddr(temp_flag.active_slot);
@@ -218,40 +296,40 @@ uint8_t Flash_erase(void)//æ“¦é™¤ç„¶åè°ƒç”¨å†™å…¥flash
     uint32_t page_error = 0xFFFFFFFFU;
     erase_init.TypeErase = FLASH_TYPEERASE_PAGES;
     erase_init.Banks = FLASH_BANK_1;
-     /* 1. è¾¹ç•Œç¡¬æ ¡éªŒï¼šæ“¦é”™èŒƒå›´ = æŠ¹æ‰ bootloader = æ°¸ä¹…å˜ç – */
+     /* 1. ±ß½çÓ²Ğ£Ñé£º²Á´í·¶Î§ = Ä¨µô bootloader = ÓÀ¾Ã±ä×© */
     if (end <= start || start < APP_A_START_ADDR || end > FLAG_START_ADDR)
     {
         printf("erase range err %08X-%08X\r\n", start, end);
         return 0;
     }
 
-    if (page_cnt == 0) return 0;//éœ€è¦æ“¦é™¤é¡µä¸º0
+    if (page_cnt == 0) return 0;//ĞèÒª²Á³ıÒ³Îª0
 
-    for(uint32_t i = 0; i < page_cnt; i++)//æ¯æ¬¡åªæ“¦ä¸€é¡µ
+    for(uint32_t i = 0; i < page_cnt; i++)//Ã¿´ÎÖ»²ÁÒ»Ò³
     {
-        IWDG_Boot_Feed(); /* æ“¦å‰å–‚ */
+        IWDG_Boot_Feed(); /* ²ÁÇ°Î¹ */
         erase_init.PageAddress = GetSlotUpdateAddr(temp_flag.active_slot) + i * FLASH_PAGE_SIZE;
-        erase_init.NbPages = 1; //æ¯æ¬¡åªæ“¦1é¡µ
+        erase_init.NbPages = 1; //Ã¿´ÎÖ»²Á1Ò³
         HAL_StatusTypeDef ret = HAL_FLASHEx_Erase(&erase_init, &page_error);
         if (ret != HAL_OK || page_error != 0xFFFFFFFFU)
         {
             printf("erase fail pg%u addr=%08X st=%d\r\n",
                    i, page_error, (int)ret);
-            HAL_FLASH_Lock();            /* å¤±è´¥ä¹Ÿå¿…é¡»ä¸Šé” */
-            return 0;                     /* ç»ä¸å¸¦ç—…å¾€ä¸‹å†™ */
+            HAL_FLASH_Lock();            /* Ê§°ÜÒ²±ØĞëÉÏËø */
+            return 0;                     /* ¾ø²»´ø²¡ÍùÏÂĞ´ */
         }
-        IWDG_Boot_Feed(); //âœ…æ“¦å®Œä¸€é¡µç«‹åˆ»å–‚ç‹—
+        IWDG_Boot_Feed(); //¡Ì²ÁÍêÒ»Ò³Á¢¿ÌÎ¹¹·
     }
     HAL_FLASH_Lock();
     return 1;
 }
-// å‡çº§å®Œæˆåè°ƒç”¨ï¼šå†™å…¥æœ€åé—ç•™çš„å¥‡æ•°å­—èŠ‚
+// Éı¼¶Íê³Éºóµ÷ÓÃ£ºĞ´Èë×îºóÒÅÁôµÄÆæÊı×Ö½Ú
 void bootloader_finish_write(void)
 {
     if(last_byte_flag)
     {
         HAL_FLASH_Unlock();
-        uint16_t data16 = last_byte | 0xFF00; // è¡¥0xFFå†™å…¥æœ€ååŠå­—
+        uint16_t data16 = last_byte | 0xFF00; // ²¹0xFFĞ´Èë×îºó°ë×Ö
         HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, GetSlotUpdateAddr(temp_flag.active_slot) + flash_write_offset, data16);
         flash_write_offset += 2;
         HAL_FLASH_Lock();
@@ -259,36 +337,36 @@ void bootloader_finish_write(void)
     }
 }
 
-// å•å­—èŠ‚æ¥æ”¶/DMA æ¥æ”¶å®Œæˆï¼ˆç¼“å†²åŒºå¡«æ»¡ï¼‰ ä¸­æ–­å›è°ƒ
+// µ¥×Ö½Ú½ÓÊÕ/DMA ½ÓÊÕÍê³É£¨»º³åÇøÌîÂú£© ÖĞ¶Ï»Øµ÷
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if(huart->Instance != USART1) return;
-    // ===== æ¨¡å¼1ï¼šDMAå›ºä»¶å¤§åŒ…æ¥æ”¶ =====
+    // ===== Ä£Ê½1£ºDMA¹Ì¼ş´ó°ü½ÓÊÕ =====
     if(temp_flag.state == OTA_DOWNLOADING && receive_all_len < temp_flag.app_len)
     {
         if(huart->pRxBuffPtr == rx_buf0)
         {
-            // æ ‡è®°ï¼šè¿™æ˜¯æ»¡åŒ…ï¼Œåé¢åˆ°æ¥çš„IDLEä¸­æ–­ç›´æ¥è·³è¿‡
+            // ±ê¼Ç£ºÕâÊÇÂú°ü£¬ºóÃæµ½À´µÄIDLEÖĞ¶ÏÖ±½ÓÌø¹ı
             g_is_full_packet = 1;
 
             buf0_len = UART1_RX_BUF_SIZE;
             buf0_ready = 1;
-            // åˆ‡æ¢DMAåˆ°buf1
+            // ÇĞ»»DMAµ½buf1
             HAL_UART_Receive_DMA(&uart1_handle, rx_buf1, UART1_RX_BUF_SIZE);
-            active_buf = 1;  // âœ… åŒæ­¥æ›´æ–°ï¼šå½“å‰DMAç›®æ ‡æ˜¯buf1
+            active_buf = 1;  // ¡Ì Í¬²½¸üĞÂ£ºµ±Ç°DMAÄ¿±êÊÇbuf1
         }
         else if(huart->pRxBuffPtr == rx_buf1)
         {
-            // æ ‡è®°ï¼šè¿™æ˜¯æ»¡åŒ…ï¼Œåé¢åˆ°æ¥çš„IDLEä¸­æ–­ç›´æ¥è·³è¿‡
+            // ±ê¼Ç£ºÕâÊÇÂú°ü£¬ºóÃæµ½À´µÄIDLEÖĞ¶ÏÖ±½ÓÌø¹ı
             g_is_full_packet = 1;
             buf1_len = UART1_RX_BUF_SIZE;
             buf1_ready = 1;
-            // åˆ‡æ¢DMAåˆ°buf0
+            // ÇĞ»»DMAµ½buf0
             HAL_UART_Receive_DMA(&uart1_handle, rx_buf0, UART1_RX_BUF_SIZE);
-            active_buf = 0;  // âœ… åŒæ­¥æ›´æ–°ï¼šå½“å‰DMAç›®æ ‡æ˜¯buf0
+            active_buf = 0;  // ¡Ì Í¬²½¸üĞÂ£ºµ±Ç°DMAÄ¿±êÊÇbuf0
         }
     }
-    // ===== æ¨¡å¼2ï¼šå•å­—èŠ‚æŒ‡ä»¤æ¥æ”¶æ¨¡å¼ =====
+    // ===== Ä£Ê½2£ºµ¥×Ö½ÚÖ¸Áî½ÓÊÕÄ£Ê½ =====
     else
     {
         uint8_t ch = ch_recv;
@@ -297,58 +375,60 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         if(cmd_idx >= CMD_LEN)
         {
             a++;
-            // 1. å…ˆåŒ¹é…å¸§å¤´
+            // 1. ÏÈÆ¥ÅäÖ¡Í·
             if(cmd_buf[0] == 0xA5 && cmd_buf[1] == 0x5A && cmd_buf[2] == 0x01)
             {
-                // 2. è®¡ç®—å‰7å­—èŠ‚çš„CRC
-                uint16_t calc_crc = crc16_ccitt(cmd_buf, 9);
-                // 3. æå–æ”¶åˆ°çš„CRCï¼ˆä½å­—èŠ‚åœ¨å‰ï¼Œé«˜å­—èŠ‚åœ¨åï¼‰
-                uint16_t recv_crc = cmd_buf[9] | (cmd_buf[10] << 8);
+                // 2. ¼ÆËãÇ°7×Ö½ÚµÄCRC
+                uint32_t calc_crc = crc32_iso(cmd_buf, CMD_LEN - 4);
+                // 3. ÌáÈ¡ÊÕµ½µÄCRC£¨µÍ×Ö½ÚÔÚÇ°£¬¸ß×Ö½ÚÔÚºó£©
+                uint32_t recv_crc = (uint32_t)cmd_buf[CMD_LEN - 4] | ((uint32_t)cmd_buf[CMD_LEN - 3] << 8) | ((uint32_t)cmd_buf[CMD_LEN - 2] << 16) | ((uint32_t)cmd_buf[CMD_LEN - 1] << 24);
                 //printf("calc_crc:0x%04X, recv_crc:0x%04X\r\n",calc_crc,recv_crc);
-                // 4. CRCæ ¡éªŒé€šè¿‡æ‰æ‰§è¡Œå‘½ä»¤
+                // 4. CRCĞ£ÑéÍ¨¹ı²ÅÖ´ĞĞÃüÁî
                 if(calc_crc == recv_crc)
                 {
-                    //è·å–åˆ°å‡çº§å‘½ä»¤ï¼Œåˆ‡æ¢ä¸ºå‡çº§ä¸‹è½½çŠ¶æ€
+                    //»ñÈ¡µ½Éı¼¶ÃüÁî£¬ÇĞ»»ÎªÉı¼¶ÏÂÔØ×´Ì¬
                     temp_flag.state = OTA_DOWNLOADING;
-                    // æå–4å­—èŠ‚æ€»é•¿åº¦ï¼ˆå¤§ç«¯ç¤ºä¾‹ï¼‰
+                    // ÌáÈ¡4×Ö½Ú×Ü³¤¶È£¨´ó¶ËÊ¾Àı£©
                     temp_flag.app_len = (cmd_buf[3] << 24) |
                                     (cmd_buf[4] << 16) |
                                     (cmd_buf[5] << 8)  |
                                     (cmd_buf[6]);
-                    printf("%08x",temp_flag.app_len);
-                    //è§£æå›ºä»¶ç›®æ ‡CRCï¼ˆ2å­—èŠ‚å¤§ç«¯ï¼‰
-                    temp_flag.new_app_crc = ((uint16_t)cmd_buf[7] << 8) | cmd_buf[8];
+                    g_total_packets = ((uint16_t)cmd_buf[7] << 8) | cmd_buf[8];
+                    g_payload_len   = ((uint16_t)cmd_buf[9] << 8) | cmd_buf[10];
+                    printf("app_len=%08X\r\n", temp_flag.app_len);
+                    //½âÎö¹Ì¼şÄ¿±êCRC£¨2×Ö½Ú´ó¶Ë£©
+                    temp_flag.new_app_crc = ((uint32_t)cmd_buf[12] << 24) | ((uint32_t)cmd_buf[13] << 16) | ((uint32_t)cmd_buf[14] << 8) | (uint32_t)cmd_buf[15];
                 }
                 else
                 {
-                    // CRCæ ¡éªŒå¤±è´¥ï¼Œä¸¢å¼ƒè¿™å¸§ï¼Œå¯é€‰æ‰“å°é”™è¯¯
+                    // CRCĞ£ÑéÊ§°Ü£¬¶ªÆúÕâÖ¡£¬¿ÉÑ¡´òÓ¡´íÎó
                     printf("cmd CRC error\r\n");
                 }
             }
-            cmd_idx = 0;// æ¸…ç©ºç´¢å¼•ï¼Œç­‰å¾…ä¸‹ä¸€å¸§
+            cmd_idx = 0;// Çå¿ÕË÷Òı£¬µÈ´ıÏÂÒ»Ö¡
         }
         HAL_UART_Receive_IT(&uart1_handle, &ch_recv, 1);
     }
 }
 
-// å‡è®¾ FLAG_START_ADDR æ‰€åœ¨çš„æ‰‡åŒºæ˜¯ FLASH_SECTOR_X
-uint8_t OTA_Flag_Save(void)//OTA_Flag_Saveï¼šæŠŠ RAM temp_flag ä¿å­˜åˆ° Flashï¼ˆåªæœ‰ OTA å…³é”®èŠ‚ç‚¹è°ƒç”¨ï¼‰
+// ¼ÙÉè FLAG_START_ADDR ËùÔÚµÄÉÈÇøÊÇ FLASH_SECTOR_X
+uint8_t OTA_Flag_Save(void)//OTA_Flag_Save£º°Ñ RAM temp_flag ±£´æµ½ Flash£¨Ö»ÓĞ OTA ¹Ø¼ü½Úµãµ÷ÓÃ£©
 {
     HAL_StatusTypeDef ret;
     __disable_irq();
-    // 4. æ“¦é™¤ Flash æ‰‡åŒº
+    // 4. ²Á³ı Flash ÉÈÇø
     HAL_FLASH_Unlock();
     FLASH_EraseInitTypeDef erase_init;
-    erase_init.TypeErase = FLASH_TYPEERASE_PAGES;//æ“¦é™¤ç±»å‹ä¸ºé¡µæ“¦é™¤
-    erase_init.Banks = FLASH_BANK_1;//æ“¦é™¤çš„é¡µæ‰€åœ¨çš„bank(FLASHæœ‰å‡ å—)
-    uint32_t page_error = 0;//ä¸æ˜¾ç¤ºæ“¦æ‹­å¤±è´¥çš„é¡µåœ°å€ä¿¡æ¯
+    erase_init.TypeErase = FLASH_TYPEERASE_PAGES;//²Á³ıÀàĞÍÎªÒ³²Á³ı
+    erase_init.Banks = FLASH_BANK_1;//²Á³ıµÄÒ³ËùÔÚµÄbank(FLASHÓĞ¼¸¿é)
+    uint32_t page_error = 0;//²»ÏÔÊ¾²ÁÊÃÊ§°ÜµÄÒ³µØÖ·ĞÅÏ¢
 
-    for(uint32_t i = 0; i < 2; i++)//æ¯æ¬¡åªæ“¦ä¸€é¡µ,æ ‡å¿—åŒºä¸€å…±2é¡µ
+    for(uint32_t i = 0; i < 2; i++)//Ã¿´ÎÖ»²ÁÒ»Ò³,±êÖ¾ÇøÒ»¹²2Ò³
     {
-        erase_init.PageAddress = FLAG_START_ADDR + i * FLASH_PAGE_SIZE;//æ“¦é™¤çš„é¡µåœ°å€
-        erase_init.NbPages = 1; //æ¯æ¬¡åªæ“¦1é¡µ
+        erase_init.PageAddress = FLAG_START_ADDR + i * FLASH_PAGE_SIZE;//²Á³ıµÄÒ³µØÖ·
+        erase_init.NbPages = 1; //Ã¿´ÎÖ»²Á1Ò³
         HAL_FLASHEx_Erase(&erase_init, &page_error);
-        IWDG_Boot_Feed(); //æ“¦å®Œä¸€é¡µç«‹åˆ»å–‚ç‹—
+        IWDG_Boot_Feed(); //²ÁÍêÒ»Ò³Á¢¿ÌÎ¹¹·
     }
 
     ret = HAL_FLASHEx_Erase(&erase_init, &page_error);
@@ -358,7 +438,7 @@ uint8_t OTA_Flag_Save(void)//OTA_Flag_Saveï¼šæŠŠ RAM temp_flag ä¿å­˜åˆ° Flashï¼
         __enable_irq();
         return 0;
     }
-    // 5. å°† RAM é‡Œçš„å€¼å†™å› Flashï¼ˆæ³¨æ„å¯¹é½ï¼Œé€šå¸¸æŒ‰å­—æˆ–åŠå­—å†™å…¥ï¼‰
+    // 5. ½« RAM ÀïµÄÖµĞ´»Ø Flash£¨×¢Òâ¶ÔÆë£¬Í¨³£°´×Ö»ò°ë×ÖĞ´Èë£©
     uint16_t *p_data = (uint16_t *)&temp_flag;
     uint32_t addr = FLAG_START_ADDR;
     for(uint32_t i = 0; i < sizeof(OTA_FlagTypeDef)/2; i++)
@@ -377,59 +457,39 @@ uint8_t OTA_Flag_Save(void)//OTA_Flag_Saveï¼šæŠŠ RAM temp_flag ä¿å­˜åˆ° Flashï¼
     return 1;
 }
 
-// è®¡ç®—CRC16-CCITT
-// pBuf: æ•°æ®ç¼“å†²åŒºæŒ‡é’ˆ
-// len: æ•°æ®é•¿åº¦
-// è¿”å›: 16ä½CRCç»“æœ
-uint16_t crc16_ccitt(uint8_t *pBuf, uint32_t len)
+// CRC32 (IEEE 802.3 / zlib), identical to PC-side zlib.crc32
+// self-test: crc32_iso((const uint8_t*)"123456789", 9) == 0xCBF43926
+uint32_t crc32_iso(const uint8_t *p, uint32_t len)
 {
-    uint16_t crc = 0xFFFF;
+    uint32_t crc = 0xFFFFFFFFu;
     while(len--)
     {
-        crc ^= (uint16_t)*pBuf++ << 8;
+        crc ^= *p++;
         for(uint8_t i = 0; i < 8; i++)
         {
-            if(crc & 0x8000)
-                crc = (crc << 1) ^ 0x1021;
+            if(crc & 1u)
+                crc = (crc >> 1) ^ 0xEDB88320u;
             else
-                crc <<= 1;
+                crc >>= 1;
         }
     }
-    return crc;
+    return crc ^ 0xFFFFFFFFu;
 }
 
-// æ ¡éªŒAPPåŒºåŸŸFlashçš„CRC16
-// start_addr: APPèµ·å§‹åœ°å€
-// total_len: å›ºä»¶æ€»é•¿åº¦
-// target_crc: ç›®æ ‡CRCå€¼
-// è¿”å›: 1=æ ¡éªŒé€šè¿‡ï¼Œ0=æ ¡éªŒå¤±è´¥
-uint8_t flash_crc_check(uint32_t start_addr, uint32_t total_len, uint16_t target_crc)
+// verify CRC32 over the whole APP flash region (returns 1=pass, 0=fail)
+uint8_t flash_crc_check(uint32_t start_addr, uint32_t total_len, uint32_t target_crc)
 {
-    uint16_t calc_crc = 0xFFFF;
-    uint8_t *p_flash = (uint8_t *)start_addr;
-    
-    for(uint32_t i = 0; i < total_len; i++)
-    {
-        uint8_t data = p_flash[i];
-        calc_crc ^= (uint16_t)data << 8;
-        for(uint8_t j = 0; j < 8; j++)
-        {
-            if(calc_crc & 0x8000)
-                calc_crc = (calc_crc << 1) ^ 0x1021;
-            else
-                calc_crc <<= 1;
-        }
-    }
-    printf("%04x",calc_crc);
+    uint32_t calc_crc = crc32_iso((const uint8_t *)start_addr, total_len);
+    printf("CRC32=%08X target=%08X\r\n", calc_crc, target_crc);
     return (calc_crc == target_crc) ? 1 : 0;
 }
 
 /**
- * @brief  è¯»å–FlashæŒ‡å®šåœ°å€åˆ°RAMç¼“å†²åŒº
- * @param  src_addr: Flashæºåœ°å€(0x08xxxxxx)
- * @param  dst: RAMç›®æ ‡ç¼“å†²åŒºæŒ‡é’ˆ
- * @param  len: è¯»å–å­—èŠ‚é•¿åº¦
- * @retval æ— 
+ * @brief  ¶ÁÈ¡FlashÖ¸¶¨µØÖ·µ½RAM»º³åÇø
+ * @param  src_addr: FlashÔ´µØÖ·(0x08xxxxxx)
+ * @param  dst: RAMÄ¿±ê»º³åÇøÖ¸Õë
+ * @param  len: ¶ÁÈ¡×Ö½Ú³¤¶È
+ * @retval ÎŞ
  */
 void Flash_Read(uint32_t src_addr, volatile void *dst, uint32_t len)
 {
@@ -443,8 +503,8 @@ void Flash_Read(uint32_t src_addr, volatile void *dst, uint32_t len)
 }
 
 IWDG_HandleTypeDef hiwdg;
-/* IWDGåˆå§‹åŒ–ï¼šè¶…æ—¶æ—¶é—´â‰ˆ2ç§’ï¼ˆLSI 40kHzï¼‰
- * 40000 / 64 = 625Hzï¼Œé‡è£…è½½1250 â†’ 2ç§’æº¢å‡ºå¤ä½
+/* IWDG³õÊ¼»¯£º³¬Ê±Ê±¼ä¡Ö2Ãë£¨LSI 40kHz£©
+ * 40000 / 64 = 625Hz£¬ÖØ×°ÔØ1250 ¡ú 2ÃëÒç³ö¸´Î»
  */
 void IWDG_Boot_Init(void)
 {
@@ -454,28 +514,28 @@ void IWDG_Boot_Init(void)
     HAL_IWDG_Init(&hiwdg);
 }
 
-/* Bootloaderå†…å–‚ç‹—ï¼Œé˜²æ­¢Flashæ“¦å†™è¿‡ç¨‹ä¸­è¶…æ—¶å¤ä½ */
+/* BootloaderÄÚÎ¹¹·£¬·ÀÖ¹Flash²ÁĞ´¹ı³ÌÖĞ³¬Ê±¸´Î» */
 void IWDG_Boot_Feed(void)
 {
     HAL_IWDG_Refresh(&hiwdg);
 }
 
-uint32_t GetSlotUpdateAddr(uint8_t slot)/* æ ¹æ®å½“å‰æ´»åŠ¨åˆ†åŒºè·å–å¦ä¸€ä¸ªéœ€è¦å‡çº§ç›®æ ‡åˆ†åŒºèµ·å§‹åœ°å€ */
+uint32_t GetSlotUpdateAddr(uint8_t slot)/* ¸ù¾İµ±Ç°»î¶¯·ÖÇø»ñÈ¡ÁíÒ»¸öĞèÒªÉı¼¶Ä¿±ê·ÖÇøÆğÊ¼µØÖ· */
 {
     return (slot == SLOT_A) ? APP_B_START_ADDR : APP_A_START_ADDR;
 }
 
-uint32_t GetSlotUpdateEndAddr(uint8_t slot)/* æ ¹æ®å½“å‰æ´»åŠ¨åˆ†åŒºè·å–å¦ä¸€ä¸ªéœ€è¦å‡çº§ç›®æ ‡åˆ†åŒºç»“æŸåœ°å€ */
+uint32_t GetSlotUpdateEndAddr(uint8_t slot)/* ¸ù¾İµ±Ç°»î¶¯·ÖÇø»ñÈ¡ÁíÒ»¸öĞèÒªÉı¼¶Ä¿±ê·ÖÇø½áÊøµØÖ· */
 {
     return (slot == SLOT_A) ? APP_B_END_ADDR : APP_A_END_ADDR;
 }
 
-uint32_t GetSlotStartAddr(uint8_t slot)/* è·å–å½“å‰æ´»åŠ¨åˆ†åŒºèµ·å§‹åœ°å€ */
+uint32_t GetSlotStartAddr(uint8_t slot)/* »ñÈ¡µ±Ç°»î¶¯·ÖÇøÆğÊ¼µØÖ· */
 {
     return (slot == SLOT_A) ? APP_A_START_ADDR : APP_B_START_ADDR;
 }
 
-uint32_t GetSlotEndAddr(uint8_t slot)/* è·å–å½“å‰æ´»åŠ¨åˆ†åŒºç»“æŸåœ°å€ */
+uint32_t GetSlotEndAddr(uint8_t slot)/* »ñÈ¡µ±Ç°»î¶¯·ÖÇø½áÊøµØÖ· */
 {
     return (slot == SLOT_A) ? APP_A_END_ADDR : APP_B_END_ADDR;
 }
