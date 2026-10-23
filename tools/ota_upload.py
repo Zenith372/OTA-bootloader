@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 STM32 OTA 上位机 —— 逐包 CRC32 校验 + 停等重传
 
