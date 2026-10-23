@@ -59,7 +59,7 @@ void send_ctrl(uint8_t b)
     USART1->DR = b;                     /* 写入 DR,硬件自动发出 */
 }
 
-/* 一整帧到齐后调用:拆字段 -> 校验包号和 CRC32 -> 决定写 Flash 还是让上位机重发 */
+/* 固件每包包一整帧到齐后调用:拆字段 -> 校验包号和 CRC32 -> 决定写 Flash 还是让上位机重发 */
 static void frame_on_complete(void)
 {
     /* ---- 1. 从帧里取出各字段(seq/len 都是小端) ---- */
@@ -271,6 +271,9 @@ void bootloader_jump_to_app(uint32_t app_addr,uint32_t end_addr)
     /* 跳转前喂一次狗，给App预留充足启动时间 */
     IWDG_Boot_Feed();
     //2.4跳转到A程序复位中断
+    // PRIMASK 会跨跳转保留, 不恢复的话 APP 一进来就是全局关中断,
+    // HAL_Delay() 之类依赖 SysTick 的代码会永久卡死
+    __enable_irq();
     pFunc jump_to_app = (pFunc)app_reset_handle;
     jump_to_app();//跳转之后的内容是执行不到的
 }
@@ -445,7 +448,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
                             temp_flag.state = OTA_DOWNLOADING;   /* 通过才进入下载状态 */
                         }
                     }
-                    printf("app_len=%08X\r\n", temp_flag.app_len);
+                    printf("app_len = %d\r\n", temp_flag.app_len);
                     //解析固件目标CRC（2字节大端）
                     temp_flag.new_app_crc = ((uint32_t)cmd_buf[12] << 24) | ((uint32_t)cmd_buf[13] << 16) | ((uint32_t)cmd_buf[14] << 8) | (uint32_t)cmd_buf[15];
                 }
@@ -554,6 +557,7 @@ void Flash_Read(uint32_t src_addr, volatile void *dst, uint32_t len)
 }
 
 IWDG_HandleTypeDef hiwdg;
+static uint8_t s_iwdg_started = 0;   // 0 = 看门狗还没启动, 喂狗调用直接忽略
 /* IWDG初始化：超时时间≈2秒（LSI 40kHz）
  * 40000 / 64 = 625Hz，重装载1250 → 2秒溢出复位
  */
@@ -563,11 +567,13 @@ void IWDG_Boot_Init(void)
     hiwdg.Init.Prescaler = IWDG_PRESCALER_64;
     hiwdg.Init.Reload = 1250;
     HAL_IWDG_Init(&hiwdg);
+    s_iwdg_started = 1;
 }
 
 /* Bootloader内喂狗，防止Flash擦写过程中超时复位 */
 void IWDG_Boot_Feed(void)
 {
+    if (!s_iwdg_started) return;   // 正常启动(非 OTA)不碰看门狗
     HAL_IWDG_Refresh(&hiwdg);
 }
 

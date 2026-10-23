@@ -12,7 +12,7 @@ STM32 OTA 上位机 —— 逐包 CRC32 校验 + 停等重传
  参数说明:
     port          串口号,例如 COM5(用 --list 查看)
     firmware      要升级的固件 .bin 文件(注意:是"应用程序"的 bin)
-    -b/--baud     波特率,默认 115200
+    -b/--baud     波特率,默认 230400
     --payload     每包数据长度,默认 512(必须和单片机端一致)
     --retry       每包最多重传几次,默认 5
     --wait        等你按复位键的秒数,默认 30
@@ -37,7 +37,7 @@ CTRL_OK    = 0x13   # 单片机 -> 电脑:最终 CRC 校验通过
 CTRL_FAIL  = 0x14   # 单片机 -> 电脑:出错了(命令被拒 / 写入越界 / 最终校验失败)
 
 CTRL_ALL   = {CTRL_READY, CTRL_ACK, CTRL_NAK, CTRL_DONE, CTRL_OK, CTRL_FAIL}
-BANNER     = "等待接收命令"   # 单片机开机打印的提示文字,用来判断板子已启动
+# 单片机启动后会先打印一段文字(固件里是 GBK 中文), 收到任意数据就算它启动了
 
 
 # =====================================================================
@@ -108,7 +108,7 @@ _rx = bytearray()          # 已从串口读出、但还没处理的字节
 
 def log_text(data: bytes):
     """把单片机打印的文字显示出来(调试信息)"""
-    s = data.decode("utf-8", "ignore").strip()
+    s = data.decode("gbk", "ignore").strip()
     if s:
         print("  [设备] " + s.replace("\r", "").replace("\n", "\n  [设备] "))
 
@@ -217,22 +217,18 @@ def mode_upload(args):
         print("串口已打开: %s @ %d" % (args.port, args.baud))
         print("请按一下开发板上的【复位】键(或重新上电),脚本在等你...")
 
-        # 等开机提示
+        # 等开机打印: 收到任意数据就认为板子已经启动并进入接收窗口
         deadline = time.time() + args.wait
-        buf = bytearray()
         got_banner = False
         while time.time() < deadline and not got_banner:
-            for b in ser.read(64):
-                buf.append(b)
-                if b in (10, 13):          # 遇到换行就当作一行
-                    line = bytes(buf).decode("utf-8", "ignore")
-                    log_text(bytes(buf))
-                    buf.clear()
-                    if BANNER in line:
-                        got_banner = True
+            chunk = ser.read(64)
+            if chunk:
+                log_text(chunk)
+                got_banner = True
+                time.sleep(0.2)     # 等它把启动打印发完, 并执行到 HAL_UART_Receive_IT
         if not got_banner:
-            print("没有等到开发板的启动提示。")
-            print("检查:1) 串口号对不对 2) 波特率是不是 115200 3) 有没有按复位键")
+            print("没有等到开发板的任何数据。")
+            print("检查: 1) 串口号 2) 波特率(本工程 230400) 3) 有没有按复位键")
             return 1
 
         # 发命令帧
@@ -301,7 +297,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("port", nargs="?", help="串口号,如 COM5")
     ap.add_argument("firmware", nargs="?", help="要升级的固件 .bin 文件")
-    ap.add_argument("-b", "--baud", type=int, default=115200, help="波特率,默认 115200")
+    ap.add_argument("-b", "--baud", type=int, default=230400, help="波特率,默认 230400")
     ap.add_argument("--payload", type=int, default=512, help="每包数据长度,默认 512")
     ap.add_argument("--retry", type=int, default=5, help="每包最多重传次数,默认 5")
     ap.add_argument("--ack-timeout", type=float, default=2.0, help="等 ACK 的超时秒数")
