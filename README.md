@@ -281,33 +281,21 @@ OTA_ConfirmIfNeeded();     // 升级后第一次运行必须调用，负责“�
 
 ## 已知问题（重要）
 
-1. **`ACTIVE_SLOT` 宏是反的**
-
-   ```c
-   #define ACTIVE_SLOT temp_flag.active_slot == 1 ? A : B   // 实际在 A 时打印 "B"
-   ```
-
-   建议改成：
-
-   ```c
-   #define ACTIVE_SLOT (temp_flag.active_slot == SLOT_A ? A : B)
-   ```
-
-2. **B 区 APP 的确认函数写死了 A 区**
+1. **B 区 APP 的确认函数写死了 A 区**
 
    `1. STM32_流水灯实验`（B 区工程）里 `OTA_ConfirmIfNeeded()` 仍然把
    `active_slot` 设成 `SLOT_A`，B 区固件应改成 `SLOT_B`，否则下次上电会跳回旧 APP。
 
-3. **APP 有效时没有升级窗口**
+2. **APP 有效时没有升级窗口**
 
    当前启动流程在 `IDLE` 状态下直接跳 APP，所以一旦 APP 有效，上电就进不去 OTA，
    只能擦掉 APP 分区再升。若要方便反复升级，可在跳转前加 3~5 秒等待窗口。
 
-4. **波特率是编译期固定的**
+3. **波特率是编译期固定的**
 
    改 `uart1_init()` 后必须重新编译并烧录 BootLoader，上位机也要用同样的 `-b`。
 
-5. **A/B 分区需要两份链接地址不同的固件**
+4. **A/B 分区需要两份链接地址不同的固件**
 
    当前方案不是位置无关代码，A 区固件不能直接跑在 B 区（会报 `reset handle error`）。
 
